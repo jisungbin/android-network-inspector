@@ -1,0 +1,10 @@
+.gradle/
+build/
+.idea/
+*.iml
+local.properties
+.kotlin/
+.DS_Store
+
+studio-bundle/lib/
+studio-bundle/device/
