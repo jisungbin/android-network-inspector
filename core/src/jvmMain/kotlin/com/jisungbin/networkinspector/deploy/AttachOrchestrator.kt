@@ -17,17 +17,20 @@ import studio.network.inspection.NetworkInspectorProtocol
 import java.io.File
 
 enum class AttachMode { ColdStart, AttachRunning }
+enum class AttachStage { Deploying, DaemonStart, AttachAgent, Forwarding, CreatingInspector }
 
 class AttachOrchestrator(
     private val device: IDevice,
     private val packageName: String,
     private val bundleDir: File,
 ) {
-    fun attach(mode: AttachMode, activity: String?): AttachSession {
+    fun attach(mode: AttachMode, activity: String?, onStage: (AttachStage) -> Unit = {}): AttachSession {
         DiskLogger.log("=== attach start: device=${device.serialNumber} package=$packageName mode=$mode activity=$activity ===")
+        onStage(AttachStage.Deploying)
         val deployer = AgentDeployer(device, bundleDir, packageName)
         val deployResult = deployer.deploy()
         DiskLogger.log("deploy: $deployResult")
+        onStage(AttachStage.DaemonStart)
 
         val runner = DaemonRunner(device)
         runner.stop()
@@ -45,6 +48,7 @@ class AttachOrchestrator(
 
         val agentConfigPath = "${AgentDeployer.DEVICE_DIR}/${DaemonRunner.AGENT_CONFIG}"
         val attacher = AgentAttacher(device, packageName)
+        onStage(AttachStage.AttachAgent)
 
         val pid: Int = when (mode) {
             AttachMode.ColdStart -> {
@@ -60,6 +64,7 @@ class AttachOrchestrator(
             }
         }
         DiskLogger.log("agent attached: pid=$pid mode=$mode")
+        onStage(AttachStage.Forwarding)
 
         val forwarder = PortForwarder(device)
         val hostPort = forwarder.forwardAbstract(TRANSPORT_SOCKET_NAME)
@@ -67,6 +72,7 @@ class AttachOrchestrator(
 
         val client = TransportClient("127.0.0.1", hostPort)
         DiskLogger.log("gRPC channel opened 127.0.0.1:$hostPort")
+        onStage(AttachStage.CreatingInspector)
         return AttachSession(
             client = client,
             pid = pid,

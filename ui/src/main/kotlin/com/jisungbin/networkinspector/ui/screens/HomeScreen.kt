@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jisungbin.networkinspector.deploy.AttachMode
 import com.jisungbin.networkinspector.ui.AppStore
+import com.jisungbin.networkinspector.ui.AttachPhase
 import com.jisungbin.networkinspector.ui.AttachState
 import com.jisungbin.networkinspector.ui.UiState
 
@@ -90,6 +91,7 @@ fun HomeScreen(state: UiState, store: AppStore) {
         }
 
         when (val s = state.attach) {
+            is AttachState.Connecting -> AttachStepper(s.phase)
             is AttachState.Failed -> SelectionContainer {
                 androidx.compose.foundation.layout.Column(
                     modifier = Modifier
@@ -188,6 +190,32 @@ private fun PackageDropdown(state: UiState, store: AppStore) {
                     },
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun AttachStepper(current: AttachPhase) {
+    androidx.compose.foundation.layout.Column(
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+        modifier = Modifier.padding(top = 8.dp),
+    ) {
+        AttachPhase.entries.forEach { phase ->
+            val state = when {
+                phase.ordinal < current.ordinal -> "✓"
+                phase.ordinal == current.ordinal -> "▶"
+                else -> "·"
+            }
+            val color = when {
+                phase.ordinal < current.ordinal -> MaterialTheme.colorScheme.primary
+                phase.ordinal == current.ordinal -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.outline
+            }
+            Text(
+                "$state  ${phase.label}",
+                color = color,
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }
