@@ -18,6 +18,13 @@ import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.jisungbin.networkinspector.log.DiskLogger
+import java.awt.FileDialog
+import java.awt.Frame
+import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 fun main() = application {
     val windowState = rememberWindowState(size = DpSize(1280.dp, 800.dp))
@@ -43,6 +50,26 @@ fun main() = application {
                     enabled = streaming,
                     shortcut = KeyShortcut(Key.K, meta = true),
                     onClick = { store.clearRows() },
+                )
+                Item(
+                    text = "Export to JSON...",
+                    enabled = ui.rows.isNotEmpty(),
+                    shortcut = KeyShortcut(Key.E, meta = true),
+                    onClick = {
+                        val ts = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+                            .withZone(ZoneId.systemDefault())
+                            .format(Instant.now())
+                        val slug = ui.packageName.takeIf { it.isNotBlank() } ?: "session"
+                        val dialog = FileDialog(null as Frame?, "Save network sessions", FileDialog.SAVE)
+                        dialog.file = "$slug-$ts.json"
+                        dialog.isVisible = true
+                        val dir = dialog.directory
+                        val name = dialog.file
+                        if (dir != null && name != null) {
+                            runCatching { File(dir, name).writeText(store.exportSessionJson()) }
+                                .onFailure { DiskLogger.logError("export failed", it) }
+                        }
+                    },
                 )
                 Separator()
                 Item(
