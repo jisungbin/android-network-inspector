@@ -10,6 +10,7 @@ import com.jisungbin.networkinspector.adb.snapshot
 import com.jisungbin.networkinspector.deploy.AttachMode
 import com.jisungbin.networkinspector.deploy.AttachOrchestrator
 import com.jisungbin.networkinspector.deploy.AttachSession
+import com.jisungbin.networkinspector.deploy.AttachStage
 import com.jisungbin.networkinspector.deploy.pidOf
 import com.jisungbin.networkinspector.inspector.RowAggregator
 import kotlinx.coroutines.CoroutineScope
@@ -115,6 +116,23 @@ class AppStore {
     fun updateMethodFilter(m: String?) = _state.update { it.copy(methodFilter = m) }
     fun selectRow(id: Long?) = _state.update { it.copy(selectedRowId = id) }
 
+    fun toggleSort(key: SortKey) = _state.update {
+        if (it.sortKey == key) it.copy(sortDescending = !it.sortDescending)
+        else it.copy(sortKey = key, sortDescending = false)
+    }
+
+    fun setPaused(value: Boolean) = _state.update {
+        if (!value) it.copy(paused = false, rows = aggregator.snapshot)
+        else it.copy(paused = true)
+    }
+
+    fun toggleAutoScroll() = _state.update { it.copy(autoScroll = !it.autoScroll) }
+
+    fun clearRows() {
+        aggregator.reset()
+        _state.update { it.copy(rows = emptyList(), selectedRowId = null) }
+    }
+
     fun attach() {
         val s = _state.value
         val serial = s.deviceSerial ?: return error("device unselected")
@@ -122,7 +140,7 @@ class AppStore {
         if (s.attachMode == AttachMode.ColdStart && s.activity.isBlank()) {
             return error("activity required for cold start")
         }
-        _state.update { it.copy(attach = AttachState.Connecting) }
+        _state.update { it.copy(attach = AttachState.Connecting(AttachPhase.Deploying)) }
         scope.launch {
             var session: AttachSession? = null
             try {
@@ -132,7 +150,9 @@ class AppStore {
                 }
                 val activityArg = s.activity.takeIf { s.attachMode == AttachMode.ColdStart }
                 val opened = withContext(Dispatchers.IO) {
-                    orchestrator.attach(s.attachMode, activityArg)
+                    orchestrator.attach(s.attachMode, activityArg) { stage ->
+                        _state.update { it.copy(attach = AttachState.Connecting(stage.toPhase())) }
+                    }
                 }
                 session = opened
                 this@AppStore.session = opened
@@ -142,6 +162,7 @@ class AppStore {
                 streamJob = scope.launch(Dispatchers.IO) {
                     opened.networkEvents().collect { event ->
                         val updated = aggregator.consume(event) ?: return@collect
+                        if (_state.value.paused) return@collect
                         _state.update { ui ->
                             val replaced = ui.rows.replaceOrAppend(updated)
                             ui.copy(rows = replaced)
@@ -209,8 +230,11 @@ class AppStore {
                 com.jisungbin.networkinspector.intercept.HostRule(
                     id = it.id,
                     urlPattern = it.urlPattern,
+                    method = it.method,
                     replacementStatus = it.replacementStatus,
+                    replacementContentType = it.replacementContentType,
                     replacementBody = it.replacementBody,
+                    addedHeaders = it.addedHeaders,
                     enabled = it.enabled,
                 )
             }
@@ -224,6 +248,14 @@ class AppStore {
         val p = System.getProperty("network.inspector.studio.bundle")
             ?: error("Set -Dnetwork.inspector.studio.bundle=<path>")
         return File(p).also { require(it.isDirectory) { "Not a dir: $p" } }
+    }
+
+    private fun AttachStage.toPhase(): AttachPhase = when (this) {
+        AttachStage.Deploying -> AttachPhase.Deploying
+        AttachStage.DaemonStart -> AttachPhase.DaemonStart
+        AttachStage.AttachAgent -> AttachPhase.AttachAgent
+        AttachStage.Forwarding -> AttachPhase.Forwarding
+        AttachStage.CreatingInspector -> AttachPhase.CreatingInspector
     }
 
     private fun List<com.jisungbin.networkinspector.inspector.NetworkRow>.replaceOrAppend(

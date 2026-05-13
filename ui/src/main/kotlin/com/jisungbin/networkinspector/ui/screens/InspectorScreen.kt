@@ -1,7 +1,10 @@
 package com.jisungbin.networkinspector.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,23 +29,46 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.jisungbin.networkinspector.inspector.ConnectionState
 import com.jisungbin.networkinspector.inspector.NetworkRow
 import com.jisungbin.networkinspector.ui.AppStore
 import com.jisungbin.networkinspector.ui.AttachState
+import com.jisungbin.networkinspector.ui.SortKey
 import com.jisungbin.networkinspector.ui.StatusFilter
 import com.jisungbin.networkinspector.ui.UiState
 import com.jisungbin.networkinspector.ui.util.applyFilters
+import kotlinx.coroutines.delay
+
+private data class Column(val key: SortKey, val label: String, val initialWidth: Dp)
+
+private val Columns = listOf(
+    Column(SortKey.METHOD, "METHOD", 70.dp),
+    Column(SortKey.STATUS, "STATUS", 70.dp),
+    Column(SortKey.URL, "URL", 460.dp),
+    Column(SortKey.PROTO, "PROTO", 80.dp),
+    Column(SortKey.DURATION, "MS", 60.dp),
+    Column(SortKey.SIZE, "SIZE", 70.dp),
+)
+
+private const val HIGHLIGHT_MS = 1100L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,136 +77,285 @@ fun InspectorScreen(state: UiState, store: AppStore) {
     val filtered = remember(state.rows, state.search, state.statusFilter, state.methodFilter) {
         state.rows.applyFilters(state.search, state.statusFilter, state.methodFilter)
     }
-    val selected = filtered.firstOrNull { it.connectionId == state.selectedRowId }
+    val sorted = remember(filtered, state.sortKey, state.sortDescending) {
+        filtered.sortedWith(rowComparator(state.sortKey, state.sortDescending))
+    }
+    val selected = sorted.firstOrNull { it.connectionId == state.selectedRowId }
+    val columnWidths = remember {
+        mutableStateMapOf<SortKey, Dp>().apply { Columns.forEach { this[it.key] = it.initialWidth } }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                "pid=${streaming?.pid}  port=${streaming?.hostPort}  ${state.packageName}",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Spacer(Modifier.weight(1f))
-            OutlinedTextField(
-                value = state.search,
-                onValueChange = { store.updateSearch(it) },
-                placeholder = { Text("search URL / method") },
-                singleLine = true,
-                modifier = Modifier.width(280.dp),
-            )
-            StatusFilterDropdown(state.statusFilter) { store.updateStatusFilter(it) }
-            MethodFilterDropdown(state.methodFilter) { store.updateMethodFilter(it) }
-            TextButton(onClick = { store.detach() }) { Text("Detach") }
-        }
+        Toolbar(state, streaming, store)
+        Divider()
+        FilterBar(state, store)
         Divider()
         Row(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.weight(1.4f).fillMaxHeight()) {
-                RequestTable(rows = filtered, selectedId = state.selectedRowId) { id ->
-                    store.selectRow(id)
-                }
+                RequestTable(
+                    rows = sorted,
+                    state = state,
+                    columnWidths = columnWidths,
+                    onClickHeader = { store.toggleSort(it) },
+                    onClickRow = { store.selectRow(it) },
+                )
             }
             Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
             Box(modifier = Modifier.weight(1.6f).fillMaxHeight()) {
-                if (selected != null) {
-                    RequestDetail(selected)
-                } else {
-                    InterceptRulesPanel(state, store)
-                }
+                if (selected != null) RequestDetail(selected)
+                else InterceptRulesPanel(state, store)
             }
         }
+    }
+}
+
+@Composable
+private fun Toolbar(state: UiState, streaming: AttachState.Streaming?, store: AppStore) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            "pid=${streaming?.pid}  port=${streaming?.hostPort}  ${state.packageName}",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = { store.setPaused(!state.paused) }) {
+            Text(if (state.paused) "Resume" else "Pause")
+        }
+        TextButton(onClick = { store.clearRows() }) { Text("Clear") }
+        TextButton(onClick = { store.toggleAutoScroll() }) {
+            Text(if (state.autoScroll) "Auto-scroll: on" else "Auto-scroll: off")
+        }
+        TextButton(onClick = { store.detach() }) { Text("Detach") }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterBar(state: UiState, store: AppStore) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = state.search,
+            onValueChange = { store.updateSearch(it) },
+            placeholder = { Text("search URL / method") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        StatusFilterDropdown(state.statusFilter) { store.updateStatusFilter(it) }
+        MethodFilterDropdown(state.methodFilter) { store.updateMethodFilter(it) }
     }
 }
 
 @Composable
 private fun RequestTable(
     rows: List<NetworkRow>,
-    selectedId: Long?,
-    onClick: (Long) -> Unit,
+    state: UiState,
+    columnWidths: androidx.compose.runtime.snapshots.SnapshotStateMap<SortKey, Dp>,
+    onClickHeader: (SortKey) -> Unit,
+    onClickRow: (Long) -> Unit,
 ) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(rows.size, state.autoScroll, state.paused) {
+        if (state.autoScroll && !state.paused && rows.isNotEmpty()) {
+            listState.animateScrollToItem(rows.size - 1)
+        }
+    }
+
     Column {
-        TableHeaderRow()
+        HeaderRow(
+            sortKey = state.sortKey,
+            descending = state.sortDescending,
+            widths = columnWidths,
+            onClick = onClickHeader,
+        )
         Divider()
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             items(rows, key = { it.connectionId }) { row ->
-                val bg = when {
-                    row.connectionId == selectedId -> MaterialTheme.colorScheme.secondaryContainer
-                    row.state == ConnectionState.FAILED -> Color(0x33D32F2F)
-                    else -> Color.Transparent
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(bg)
-                        .clickable { onClick(row.connectionId) }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    TableCell(row.method, weight = 0.5f)
-                    TableCell(row.statusText(), weight = 0.5f)
-                    TableCell(row.url, weight = 4f)
-                    TableCell(row.protocol.name, weight = 0.7f)
-                    TableCell(row.durationText(), weight = 0.7f)
-                    TableCell(row.sizeText(), weight = 0.7f)
-                }
+                DataRow(
+                    row = row,
+                    selected = row.connectionId == state.selectedRowId,
+                    widths = columnWidths,
+                    onClick = { onClickRow(row.connectionId) },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun TableHeaderRow() {
+private fun HeaderRow(
+    sortKey: SortKey,
+    descending: Boolean,
+    widths: androidx.compose.runtime.snapshots.SnapshotStateMap<SortKey, Dp>,
+    onClick: (SortKey) -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        TableCell("METHOD", weight = 0.5f, header = true)
-        TableCell("STATUS", weight = 0.5f, header = true)
-        TableCell("URL", weight = 4f, header = true)
-        TableCell("PROTO", weight = 0.7f, header = true)
-        TableCell("MS", weight = 0.7f, header = true)
-        TableCell("SIZE", weight = 0.7f, header = true)
+        Columns.forEachIndexed { idx, col ->
+            val w = widths[col.key] ?: col.initialWidth
+            Row(
+                modifier = Modifier
+                    .width(w)
+                    .clickable { onClick(col.key) }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = col.label,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                )
+                if (sortKey == col.key) {
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = if (descending) "▼" else "▲",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            if (idx != Columns.lastIndex) {
+                ResizeHandle(col.key, widths)
+            }
+        }
     }
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.TableCell(
-    text: String,
-    weight: Float,
-    header: Boolean = false,
+private fun ResizeHandle(
+    key: SortKey,
+    widths: androidx.compose.runtime.snapshots.SnapshotStateMap<SortKey, Dp>,
 ) {
-    Text(
-        text = text,
-        modifier = Modifier.weight(weight),
-        fontFamily = FontFamily.Monospace,
-        fontWeight = if (header) FontWeight.Bold else FontWeight.Normal,
-        style = MaterialTheme.typography.bodySmall,
-        maxLines = 1,
+    val density = LocalDensity.current
+    Box(
+        modifier = Modifier
+            .width(6.dp)
+            .height(20.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant)
+            .pointerInput(key) {
+                detectDragGestures { _, dragAmount ->
+                    val current = widths[key] ?: 80.dp
+                    val deltaDp = with(density) { dragAmount.x.toDp() }
+                    widths[key] = (current + deltaDp).coerceAtLeast(40.dp)
+                }
+            }
     )
 }
 
-private fun NetworkRow.statusText(): String = when {
-    state == ConnectionState.FAILED -> "ERR"
-    statusCode != null -> statusCode.toString()
-    else -> "…"
-}
-
-private fun NetworkRow.durationText(): String {
-    val end = endTimestamp ?: return "—"
-    val ms = (end - startTimestamp) / 1_000_000L
-    return "$ms"
-}
-
-private fun NetworkRow.sizeText(): String {
-    val s = (requestBody?.size ?: 0) + (responseBody?.size ?: 0)
-    return when {
-        s == 0 -> "—"
-        s < 1024 -> "${s}B"
-        s < 1024 * 1024 -> "${s / 1024}KB"
-        else -> "${s / (1024 * 1024)}MB"
+@Composable
+private fun DataRow(
+    row: NetworkRow,
+    selected: Boolean,
+    widths: androidx.compose.runtime.snapshots.SnapshotStateMap<SortKey, Dp>,
+    onClick: () -> Unit,
+) {
+    val highlight = useHighlight(row.lastUpdatedAtMs)
+    val statusTint = statusTint(row)
+    val base = when {
+        selected -> MaterialTheme.colorScheme.secondaryContainer
+        else -> statusTint
     }
+    val pulse by animateColorAsState(
+        targetValue = if (highlight > 0f) Color(0xFFB7F2C5).copy(alpha = highlight * 0.5f) else Color.Transparent,
+        animationSpec = tween(80),
+        label = "row-highlight",
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(base)
+            .background(pulse)
+            .clickable { onClick() }
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Columns.forEachIndexed { idx, col ->
+            val w = widths[col.key] ?: col.initialWidth
+            Box(modifier = Modifier.width(w).padding(horizontal = 8.dp)) {
+                Text(
+                    text = cellText(row, col.key),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                )
+            }
+            if (idx != Columns.lastIndex) Spacer(Modifier.width(6.dp))
+        }
+    }
+}
+
+@Composable
+private fun useHighlight(timestamp: Long): Float {
+    var alpha by remember(timestamp) { mutableFloatStateOf(1f) }
+    LaunchedEffect(timestamp) {
+        val start = System.currentTimeMillis()
+        while (true) {
+            val elapsed = System.currentTimeMillis() - start
+            if (elapsed >= HIGHLIGHT_MS) {
+                alpha = 0f
+                break
+            }
+            alpha = 1f - elapsed / HIGHLIGHT_MS.toFloat()
+            delay(50)
+        }
+    }
+    return alpha
+}
+
+private fun statusTint(row: NetworkRow): Color = when {
+    row.state == ConnectionState.FAILED -> Color(0xFFFFCDD2)
+    row.statusCode == null -> Color.Transparent
+    row.statusCode in 200..299 -> Color.Transparent
+    row.statusCode in 300..399 -> Color(0xFFFFF59D).copy(alpha = 0.35f)
+    row.statusCode in 400..499 -> Color(0xFFFFCC80).copy(alpha = 0.4f)
+    row.statusCode in 500..599 -> Color(0xFFEF9A9A).copy(alpha = 0.45f)
+    else -> Color.Transparent
+}
+
+private fun cellText(row: NetworkRow, key: SortKey): String = when (key) {
+    SortKey.METHOD -> row.method
+    SortKey.STATUS -> when {
+        row.state == ConnectionState.FAILED -> "ERR"
+        row.statusCode != null -> row.statusCode.toString()
+        else -> "…"
+    }
+    SortKey.URL -> row.url
+    SortKey.PROTO -> row.protocol.name
+    SortKey.DURATION -> row.endTimestamp?.let { ((it - row.startTimestamp) / 1_000_000L).toString() } ?: "—"
+    SortKey.SIZE -> sizeText((row.requestBody?.size ?: 0) + (row.responseBody?.size ?: 0))
+    SortKey.START_TIME -> row.startTimestamp.toString()
+}
+
+private fun sizeText(s: Int): String = when {
+    s == 0 -> "—"
+    s < 1024 -> "${s}B"
+    s < 1024 * 1024 -> "${s / 1024}KB"
+    else -> "${s / (1024 * 1024)}MB"
+}
+
+private fun rowComparator(key: SortKey, descending: Boolean): Comparator<NetworkRow> {
+    val base: Comparator<NetworkRow> = when (key) {
+        SortKey.METHOD -> compareBy { it.method }
+        SortKey.STATUS -> compareBy { it.statusCode ?: Int.MAX_VALUE }
+        SortKey.URL -> compareBy { it.url }
+        SortKey.PROTO -> compareBy { it.protocol.name }
+        SortKey.DURATION -> compareBy { it.endTimestamp?.let { e -> e - it.startTimestamp } ?: Long.MAX_VALUE }
+        SortKey.SIZE -> compareBy { (it.requestBody?.size ?: 0) + (it.responseBody?.size ?: 0) }
+        SortKey.START_TIME -> compareBy { it.startTimestamp }
+    }
+    return if (descending) base.reversed() else base
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

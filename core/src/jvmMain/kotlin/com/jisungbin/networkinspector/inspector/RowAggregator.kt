@@ -7,6 +7,10 @@ class RowAggregator {
 
     val snapshot: List<NetworkRow> get() = rows.values.toList()
 
+    fun reset() {
+        rows.clear()
+    }
+
     fun consume(event: NIP.Event): NetworkRow? {
         if (event.unionCase != NIP.Event.UnionCase.HTTP_CONNECTION_EVENT) return null
         val h = event.httpConnectionEvent
@@ -40,8 +44,9 @@ class RowAggregator {
             )
             else -> existing
         }
-        rows[id] = next
-        return next
+        val stamped = next.copy(lastUpdatedAtMs = System.currentTimeMillis())
+        rows[id] = stamped
+        return stamped
     }
 
     private fun NIP.HttpConnectionEvent.HttpTransport.toRowProtocol(): TransportProtocol = when (this) {

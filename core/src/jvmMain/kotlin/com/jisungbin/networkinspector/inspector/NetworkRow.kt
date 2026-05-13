@@ -13,6 +13,7 @@ data class NetworkRow(
     val requestBody: ByteArray? = null,
     val responseBody: ByteArray? = null,
     val state: ConnectionState = ConnectionState.IN_FLIGHT,
+    val lastUpdatedAtMs: Long = System.currentTimeMillis(),
 )
 
 enum class TransportProtocol { JAVA_NET, OKHTTP2, OKHTTP3, UNKNOWN }
