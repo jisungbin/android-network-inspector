@@ -35,7 +35,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import com.jisungbin.networkinspector.inspector.NetworkRow
+import com.jisungbin.networkinspector.engine.NetworkRow
 import com.jisungbin.networkinspector.ui.util.decodeBody
 import com.jisungbin.networkinspector.ui.util.toCurl
 

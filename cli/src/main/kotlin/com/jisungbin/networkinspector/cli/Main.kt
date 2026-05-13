@@ -3,9 +3,9 @@ package com.jisungbin.networkinspector.cli
 import com.jisungbin.networkinspector.adb.AdbBridge
 import com.jisungbin.networkinspector.adb.findBySerial
 import com.jisungbin.networkinspector.adb.snapshot
-import com.jisungbin.networkinspector.deploy.AttachMode
-import com.jisungbin.networkinspector.deploy.AttachOrchestrator
-import com.jisungbin.networkinspector.inspector.NetworkEventRenderer
+import com.jisungbin.networkinspector.engine.AttachMode
+import com.jisungbin.networkinspector.engine.AttachOrchestrator
+import com.jisungbin.networkinspector.engine.NetworkEventRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect

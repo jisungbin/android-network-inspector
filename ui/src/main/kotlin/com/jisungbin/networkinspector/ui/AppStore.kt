@@ -7,12 +7,12 @@ import com.jisungbin.networkinspector.adb.foregroundPackage
 import com.jisungbin.networkinspector.adb.listThirdPartyPackages
 import com.jisungbin.networkinspector.adb.resolveLauncherActivity
 import com.jisungbin.networkinspector.adb.snapshot
-import com.jisungbin.networkinspector.deploy.AttachMode
-import com.jisungbin.networkinspector.deploy.AttachOrchestrator
-import com.jisungbin.networkinspector.deploy.AttachSession
-import com.jisungbin.networkinspector.deploy.AttachStage
-import com.jisungbin.networkinspector.deploy.pidOf
-import com.jisungbin.networkinspector.inspector.RowAggregator
+import com.jisungbin.networkinspector.engine.AttachMode
+import com.jisungbin.networkinspector.engine.AttachOrchestrator
+import com.jisungbin.networkinspector.engine.AttachSession
+import com.jisungbin.networkinspector.engine.AttachStage
+import com.jisungbin.networkinspector.adb.pidOf
+import com.jisungbin.networkinspector.engine.RowAggregator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -227,7 +227,7 @@ class AppStore {
         val rules = _state.value.interceptRules
             .filter { it.enabled }
             .map {
-                com.jisungbin.networkinspector.intercept.HostRule(
+                com.jisungbin.networkinspector.protocol.HostRule(
                     id = it.id,
                     urlPattern = it.urlPattern,
                     method = it.method,
@@ -240,7 +240,7 @@ class AppStore {
             }
         val s = session ?: return
         scope.launch(Dispatchers.IO) {
-            com.jisungbin.networkinspector.intercept.RuleSender.apply(s, rules)
+            com.jisungbin.networkinspector.protocol.RuleSender.apply(s.client, s.pid, rules)
         }
     }
 
@@ -258,9 +258,9 @@ class AppStore {
         AttachStage.CreatingInspector -> AttachPhase.CreatingInspector
     }
 
-    private fun List<com.jisungbin.networkinspector.inspector.NetworkRow>.replaceOrAppend(
-        row: com.jisungbin.networkinspector.inspector.NetworkRow,
-    ): List<com.jisungbin.networkinspector.inspector.NetworkRow> {
+    private fun List<com.jisungbin.networkinspector.engine.NetworkRow>.replaceOrAppend(
+        row: com.jisungbin.networkinspector.engine.NetworkRow,
+    ): List<com.jisungbin.networkinspector.engine.NetworkRow> {
         val idx = indexOfFirst { it.connectionId == row.connectionId }
         return if (idx >= 0) toMutableList().apply { this[idx] = row } else this + row
     }

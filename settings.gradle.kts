@@ -16,6 +16,9 @@ dependencyResolutionManagement {
     }
 }
 
-include(":core")
+include(":log")
+include(":adb")
+include(":protocol")
+include(":engine")
 include(":cli")
 include(":ui")

@@ -47,8 +47,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.jisungbin.networkinspector.inspector.ConnectionState
-import com.jisungbin.networkinspector.inspector.NetworkRow
+import com.jisungbin.networkinspector.engine.ConnectionState
+import com.jisungbin.networkinspector.engine.NetworkRow
 import com.jisungbin.networkinspector.ui.AppStore
 import com.jisungbin.networkinspector.ui.AttachState
 import com.jisungbin.networkinspector.ui.SortKey

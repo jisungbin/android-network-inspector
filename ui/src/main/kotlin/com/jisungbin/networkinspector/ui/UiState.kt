@@ -1,8 +1,8 @@
 package com.jisungbin.networkinspector.ui
 
 import com.jisungbin.networkinspector.adb.DeviceSnapshot
-import com.jisungbin.networkinspector.deploy.AttachMode
-import com.jisungbin.networkinspector.inspector.NetworkRow
+import com.jisungbin.networkinspector.engine.AttachMode
+import com.jisungbin.networkinspector.engine.NetworkRow
 
 data class UiState(
     val devices: List<DeviceSnapshot> = emptyList(),

@@ -1,6 +1,6 @@
 package com.jisungbin.networkinspector.ui.util
 
-import com.jisungbin.networkinspector.inspector.NetworkRow
+import com.jisungbin.networkinspector.engine.NetworkRow
 
 fun NetworkRow.toCurl(): String {
     val sb = StringBuilder("curl")

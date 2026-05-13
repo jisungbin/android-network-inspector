@@ -16,7 +16,7 @@ application {
 }
 
 dependencies {
-    implementation(project(":core"))
+    implementation(project(":engine"))
     implementation(libs.kotlin.stdlib)
     implementation(libs.coroutines.core)
     runtimeOnly(libs.logback.classic)

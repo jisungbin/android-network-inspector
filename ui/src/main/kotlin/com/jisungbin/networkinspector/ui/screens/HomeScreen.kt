@@ -33,7 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jisungbin.networkinspector.deploy.AttachMode
+import com.jisungbin.networkinspector.engine.AttachMode
 import com.jisungbin.networkinspector.ui.AppStore
 import com.jisungbin.networkinspector.ui.AttachPhase
 import com.jisungbin.networkinspector.ui.AttachState
