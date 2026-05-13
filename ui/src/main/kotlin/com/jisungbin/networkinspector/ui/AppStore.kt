@@ -13,6 +13,8 @@ import com.jisungbin.networkinspector.engine.AttachSession
 import com.jisungbin.networkinspector.engine.AttachStage
 import com.jisungbin.networkinspector.adb.pidOf
 import com.jisungbin.networkinspector.engine.RowAggregator
+import com.jisungbin.networkinspector.ui.util.SessionExporter
+import com.jisungbin.networkinspector.ui.util.applyFilters
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,6 +22,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -133,7 +137,13 @@ class AppStore {
 
     fun clearRows() {
         aggregator.reset()
-        _state.update { it.copy(rows = emptyList(), selectedRowId = null) }
+        _state.update { it.copy(rows = emptyList(), selectedRowId = null, firstEventAt = null) }
+    }
+
+    fun exportSessionJson(): String {
+        val s = _state.value
+        val filtered = s.rows.applyFilters(s.search, s.statusFilter, s.methodFilter)
+        return SessionExporter.export(filtered, s)
     }
 
     fun attach() {
@@ -168,11 +178,28 @@ class AppStore {
                 streamJob = scope.launch(Dispatchers.IO) {
                     opened.networkEvents().collect { event ->
                         val updated = aggregator.consume(event) ?: return@collect
+                        if (_state.value.firstEventAt == null) {
+                            _state.update { it.copy(firstEventAt = System.currentTimeMillis()) }
+                        }
                         if (_state.value.paused) return@collect
                         _state.update { ui ->
                             val replaced = ui.rows.replaceOrAppend(updated)
                             ui.copy(rows = replaced)
                         }
+                    }
+                }
+                scope.launch(Dispatchers.IO) {
+                    val received = kotlinx.coroutines.withTimeoutOrNull(5_000) {
+                        opened.rawEvents()
+                            .filter { it.kind == com.android.tools.profiler.proto.Common.Event.Kind.APP_INSPECTION_RESPONSE }
+                            .firstOrNull()
+                    }
+                    if (_state.value.attach is AttachState.Streaming && _state.value.inspectorReadyAt == null) {
+                        _state.update { it.copy(inspectorReadyAt = System.currentTimeMillis()) }
+                        com.jisungbin.networkinspector.log.DiskLogger.log(
+                            if (received != null) "inspector ready (response received)"
+                            else "inspector assumed ready (5s timeout)"
+                        )
                     }
                 }
                 kotlinx.coroutines.delay(1_500)
@@ -220,6 +247,8 @@ class AppStore {
                     rows = emptyList(),
                     selectedRowId = null,
                     destination = Destination.DEVICES,
+                    inspectorReadyAt = null,
+                    firstEventAt = null,
                 )
             }
         }

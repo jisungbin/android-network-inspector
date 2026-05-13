@@ -31,7 +31,14 @@ fun StatusBar(state: UiState) {
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Cell(
-            if (streaming != null) "● streaming pid=${streaming.pid} port=${streaming.hostPort}"
+            if (streaming != null) {
+                val tail = "pid=${streaming.pid} port=${streaming.hostPort}"
+                when {
+                    state.inspectorReadyAt == null -> "● setup $tail"
+                    state.firstEventAt == null -> "● listening (waiting for traffic) $tail"
+                    else -> "● capturing $tail"
+                }
+            }
             else when (state.attach) {
                 is AttachState.Connecting -> "○ connecting"
                 is AttachState.Failed -> "○ failed"
