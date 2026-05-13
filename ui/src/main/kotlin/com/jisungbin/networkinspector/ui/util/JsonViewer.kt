@@ -1,13 +1,17 @@
 package com.jisungbin.networkinspector.ui.util
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,6 +24,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -34,11 +39,14 @@ private val BoolColor = Color(0xFF6A1B9A)
 private val NullColor = Color(0xFF616161)
 private val BracketColor = Color(0xFF455A64)
 private val HighlightBg = Color(0xFFFFEB3B)
+private val CurrentMatchBg = Color(0xFFFF6F00)
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun JsonViewer(
     json: String,
     search: String,
+    currentMatchIndex: Int = -1,
     defaultExpandedDepth: Int = 2,
     modifier: Modifier = Modifier,
 ) {
@@ -52,11 +60,42 @@ fun JsonViewer(
         )
         return
     }
+    val counter = remember(json, search, currentMatchIndex) { intArrayOf(0) }
+    counter[0] = 0
+    val requester = remember { BringIntoViewRequester() }
+    LaunchedEffect(currentMatchIndex, json, search) {
+        if (currentMatchIndex >= 0) {
+            delay(50)
+            runCatching { requester.bringIntoView() }
+        }
+    }
     Column(modifier = modifier) {
-        JsonNode(element, indent = 0, trailingComma = false, search = search, defaultExpandedDepth = defaultExpandedDepth)
+        JsonNode(
+            element,
+            indent = 0,
+            trailingComma = false,
+            search = search,
+            defaultExpandedDepth = defaultExpandedDepth,
+            counter = counter,
+            currentMatchIndex = currentMatchIndex,
+            requester = requester,
+        )
     }
 }
 
+fun countJsonMatches(text: String, query: String): Int {
+    if (query.isBlank()) return 0
+    var count = 0
+    var i = 0
+    while (true) {
+        val idx = text.indexOf(query, i, ignoreCase = true)
+        if (idx < 0) return count
+        count++
+        i = idx + query.length
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun JsonNode(
     element: JsonElement,
@@ -64,15 +103,19 @@ private fun JsonNode(
     trailingComma: Boolean,
     search: String,
     defaultExpandedDepth: Int,
+    counter: IntArray,
+    currentMatchIndex: Int,
+    requester: BringIntoViewRequester,
 ) {
     when (element) {
-        is JsonObject -> JsonObjectView(element, indent, trailingComma, search, defaultExpandedDepth)
-        is JsonArray -> JsonArrayView(element, indent, trailingComma, search, defaultExpandedDepth)
-        is JsonPrimitive -> JsonPrimitiveView(element, indent, trailingComma, search)
-        JsonNull -> JsonPrimitiveView(JsonNull, indent, trailingComma, search)
+        is JsonObject -> JsonObjectView(element, indent, trailingComma, search, defaultExpandedDepth, counter, currentMatchIndex, requester)
+        is JsonArray -> JsonArrayView(element, indent, trailingComma, search, defaultExpandedDepth, counter, currentMatchIndex, requester)
+        is JsonPrimitive -> JsonPrimitiveView(element, indent, trailingComma, search, counter, currentMatchIndex, requester)
+        JsonNull -> JsonPrimitiveView(JsonNull, indent, trailingComma, search, counter, currentMatchIndex, requester)
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun JsonObjectView(
     obj: JsonObject,
@@ -80,65 +123,51 @@ private fun JsonObjectView(
     trailingComma: Boolean,
     search: String,
     defaultExpandedDepth: Int,
+    counter: IntArray,
+    currentMatchIndex: Int,
+    requester: BringIntoViewRequester,
 ) {
     var expanded by remember(obj) { mutableStateOf(indent < defaultExpandedDepth) }
     val pad = "  ".repeat(indent)
 
     if (obj.isEmpty()) {
-        Text(
-            text = buildAnnotatedString {
-                append(pad)
-                pushBracket("{}")
-                if (trailingComma) append(",")
-            },
-            fontFamily = FontFamily.Monospace,
-            style = MaterialTheme.typography.bodySmall,
-        )
+        MatchAwareText(counter, currentMatchIndex, requester) {
+            append(pad)
+            pushBracket("{}")
+            if (trailingComma) append(",")
+        }
         return
     }
 
     val toggleModifier = Modifier.clickable { expanded = !expanded }
     if (!expanded) {
-        Text(
-            text = buildAnnotatedString {
-                append(pad)
-                pushBracket("▸ { … ")
-                withStyle(SpanStyle(color = NullColor)) { append("${obj.size} keys") }
-                pushBracket(" }")
-                if (trailingComma) append(",")
-            },
-            fontFamily = FontFamily.Monospace,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = toggleModifier,
-        )
+        MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+            append(pad)
+            pushBracket("▸ { … ")
+            withStyle(SpanStyle(color = NullColor)) { append("${obj.size} keys") }
+            pushBracket(" }")
+            if (trailingComma) append(",")
+        }
         return
     }
 
-    Text(
-        text = buildAnnotatedString {
-            append(pad)
-            pushBracket("▾ {")
-        },
-        fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.bodySmall,
-        modifier = toggleModifier,
-    )
+    MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+        append(pad)
+        pushBracket("▾ {")
+    }
     val entries = obj.entries.toList()
     entries.forEachIndexed { i, (key, value) ->
         val last = i == entries.lastIndex
-        JsonKeyedValue(key, value, indent + 1, !last, search, defaultExpandedDepth)
+        JsonKeyedValue(key, value, indent + 1, !last, search, defaultExpandedDepth, counter, currentMatchIndex, requester)
     }
-    Text(
-        text = buildAnnotatedString {
-            append(pad)
-            pushBracket("}")
-            if (trailingComma) append(",")
-        },
-        fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.bodySmall,
-    )
+    MatchAwareText(counter, currentMatchIndex, requester) {
+        append(pad)
+        pushBracket("}")
+        if (trailingComma) append(",")
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun JsonArrayView(
     arr: JsonArray,
@@ -146,64 +175,50 @@ private fun JsonArrayView(
     trailingComma: Boolean,
     search: String,
     defaultExpandedDepth: Int,
+    counter: IntArray,
+    currentMatchIndex: Int,
+    requester: BringIntoViewRequester,
 ) {
     var expanded by remember(arr) { mutableStateOf(indent < defaultExpandedDepth) }
     val pad = "  ".repeat(indent)
 
     if (arr.isEmpty()) {
-        Text(
-            text = buildAnnotatedString {
-                append(pad)
-                pushBracket("[]")
-                if (trailingComma) append(",")
-            },
-            fontFamily = FontFamily.Monospace,
-            style = MaterialTheme.typography.bodySmall,
-        )
+        MatchAwareText(counter, currentMatchIndex, requester) {
+            append(pad)
+            pushBracket("[]")
+            if (trailingComma) append(",")
+        }
         return
     }
 
     val toggleModifier = Modifier.clickable { expanded = !expanded }
     if (!expanded) {
-        Text(
-            text = buildAnnotatedString {
-                append(pad)
-                pushBracket("▸ [ … ")
-                withStyle(SpanStyle(color = NullColor)) { append("${arr.size} items") }
-                pushBracket(" ]")
-                if (trailingComma) append(",")
-            },
-            fontFamily = FontFamily.Monospace,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = toggleModifier,
-        )
+        MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+            append(pad)
+            pushBracket("▸ [ … ")
+            withStyle(SpanStyle(color = NullColor)) { append("${arr.size} items") }
+            pushBracket(" ]")
+            if (trailingComma) append(",")
+        }
         return
     }
 
-    Text(
-        text = buildAnnotatedString {
-            append(pad)
-            pushBracket("▾ [")
-        },
-        fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.bodySmall,
-        modifier = toggleModifier,
-    )
+    MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+        append(pad)
+        pushBracket("▾ [")
+    }
     arr.forEachIndexed { i, value ->
         val last = i == arr.lastIndex
-        JsonNode(value, indent + 1, !last, search, defaultExpandedDepth)
+        JsonNode(value, indent + 1, !last, search, defaultExpandedDepth, counter, currentMatchIndex, requester)
     }
-    Text(
-        text = buildAnnotatedString {
-            append(pad)
-            pushBracket("]")
-            if (trailingComma) append(",")
-        },
-        fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.bodySmall,
-    )
+    MatchAwareText(counter, currentMatchIndex, requester) {
+        append(pad)
+        pushBracket("]")
+        if (trailingComma) append(",")
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun JsonKeyedValue(
     key: String,
@@ -212,6 +227,9 @@ private fun JsonKeyedValue(
     trailingComma: Boolean,
     search: String,
     defaultExpandedDepth: Int,
+    counter: IntArray,
+    currentMatchIndex: Int,
+    requester: BringIntoViewRequester,
 ) {
     when (value) {
         is JsonObject, is JsonArray -> {
@@ -227,107 +245,126 @@ private fun JsonKeyedValue(
             val unit = if (isObj) "keys" else "items"
 
             if (empty || !expanded) {
-                Text(
-                    text = buildAnnotatedString {
-                        append(pad)
-                        appendKey(key, search)
-                        append(": ")
-                        if (empty) {
-                            pushBracket("$open$close")
-                        } else {
-                            pushBracket("▸ $open … ")
-                            withStyle(SpanStyle(color = NullColor)) { append("$size $unit") }
-                            pushBracket(" $close")
-                        }
-                        if (trailingComma) append(",")
-                    },
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = toggleModifier,
-                )
+                MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+                    append(pad)
+                    appendKey(key, search, counter, currentMatchIndex)
+                    append(": ")
+                    if (empty) {
+                        pushBracket("$open$close")
+                    } else {
+                        pushBracket("▸ $open … ")
+                        withStyle(SpanStyle(color = NullColor)) { append("$size $unit") }
+                        pushBracket(" $close")
+                    }
+                    if (trailingComma) append(",")
+                }
                 return
             }
 
-            Text(
-                text = buildAnnotatedString {
-                    append(pad)
-                    appendKey(key, search)
-                    append(": ")
-                    pushBracket("▾ $open")
-                },
-                fontFamily = FontFamily.Monospace,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = toggleModifier,
-            )
+            MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+                append(pad)
+                appendKey(key, search, counter, currentMatchIndex)
+                append(": ")
+                pushBracket("▾ $open")
+            }
             when (value) {
                 is JsonObject -> {
                     val entries = value.entries.toList()
                     entries.forEachIndexed { i, (k, v) ->
-                        JsonKeyedValue(k, v, indent + 1, i != entries.lastIndex, search, defaultExpandedDepth)
+                        JsonKeyedValue(k, v, indent + 1, i != entries.lastIndex, search, defaultExpandedDepth, counter, currentMatchIndex, requester)
                     }
                 }
                 is JsonArray -> {
                     value.forEachIndexed { i, v ->
-                        JsonNode(v, indent + 1, i != value.lastIndex, search, defaultExpandedDepth)
+                        JsonNode(v, indent + 1, i != value.lastIndex, search, defaultExpandedDepth, counter, currentMatchIndex, requester)
                     }
                 }
                 else -> Unit
             }
-            Text(
-                text = buildAnnotatedString {
-                    append(pad)
-                    pushBracket(close)
-                    if (trailingComma) append(",")
-                },
-                fontFamily = FontFamily.Monospace,
-                style = MaterialTheme.typography.bodySmall,
-            )
+            MatchAwareText(counter, currentMatchIndex, requester) {
+                append(pad)
+                pushBracket(close)
+                if (trailingComma) append(",")
+            }
         }
         else -> {
             val pad = "  ".repeat(indent)
-            Text(
-                text = buildAnnotatedString {
-                    append(pad)
-                    appendKey(key, search)
-                    append(": ")
-                    appendPrimitive(value, search)
-                    if (trailingComma) append(",")
-                },
-                fontFamily = FontFamily.Monospace,
-                style = MaterialTheme.typography.bodySmall,
-            )
+            MatchAwareText(counter, currentMatchIndex, requester) {
+                append(pad)
+                appendKey(key, search, counter, currentMatchIndex)
+                append(": ")
+                appendPrimitive(value, search, counter, currentMatchIndex)
+                if (trailingComma) append(",")
+            }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun JsonPrimitiveView(value: JsonElement, indent: Int, trailingComma: Boolean, search: String) {
+private fun JsonPrimitiveView(
+    value: JsonElement,
+    indent: Int,
+    trailingComma: Boolean,
+    search: String,
+    counter: IntArray,
+    currentMatchIndex: Int,
+    requester: BringIntoViewRequester,
+) {
     val pad = "  ".repeat(indent)
+    MatchAwareText(counter, currentMatchIndex, requester) {
+        append(pad)
+        appendPrimitive(value, search, counter, currentMatchIndex)
+        if (trailingComma) append(",")
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MatchAwareText(
+    counter: IntArray,
+    currentMatchIndex: Int,
+    requester: BringIntoViewRequester,
+    modifier: Modifier = Modifier,
+    content: AnnotatedString.Builder.() -> Unit,
+) {
+    val start = counter[0]
+    val text = buildAnnotatedString(content)
+    val end = counter[0]
+    val containsCurrent = currentMatchIndex in start until end
+    val finalModifier = if (containsCurrent) modifier.bringIntoViewRequester(requester) else modifier
     Text(
-        text = buildAnnotatedString {
-            append(pad)
-            appendPrimitive(value, search)
-            if (trailingComma) append(",")
-        },
+        text = text,
         fontFamily = FontFamily.Monospace,
         style = MaterialTheme.typography.bodySmall,
+        modifier = finalModifier,
     )
 }
 
-private fun androidx.compose.ui.text.AnnotatedString.Builder.pushBracket(text: String) {
+private fun AnnotatedString.Builder.pushBracket(text: String) {
     withStyle(SpanStyle(color = BracketColor)) { append(text) }
 }
 
-private fun androidx.compose.ui.text.AnnotatedString.Builder.appendKey(key: String, search: String) {
+private fun AnnotatedString.Builder.appendKey(
+    key: String,
+    search: String,
+    counter: IntArray,
+    currentMatchIndex: Int,
+) {
     val keyText = "\"$key\""
     if (search.isBlank()) {
         withStyle(SpanStyle(color = KeyColor)) { append(keyText) }
         return
     }
-    appendWithHighlight(keyText, search, KeyColor)
+    appendWithHighlight(keyText, search, KeyColor, counter, currentMatchIndex)
 }
 
-private fun androidx.compose.ui.text.AnnotatedString.Builder.appendPrimitive(element: JsonElement, search: String) {
+private fun AnnotatedString.Builder.appendPrimitive(
+    element: JsonElement,
+    search: String,
+    counter: IntArray,
+    currentMatchIndex: Int,
+) {
     when (element) {
         JsonNull -> withStyle(SpanStyle(color = NullColor)) { append("null") }
         is JsonPrimitive -> {
@@ -341,17 +378,19 @@ private fun androidx.compose.ui.text.AnnotatedString.Builder.appendPrimitive(ele
             if (search.isBlank()) {
                 withStyle(SpanStyle(color = color)) { append(rendered) }
             } else {
-                appendWithHighlight(rendered, search, color)
+                appendWithHighlight(rendered, search, color, counter, currentMatchIndex)
             }
         }
         else -> append(element.toString())
     }
 }
 
-private fun androidx.compose.ui.text.AnnotatedString.Builder.appendWithHighlight(
+private fun AnnotatedString.Builder.appendWithHighlight(
     text: String,
     query: String,
     base: Color,
+    counter: IntArray,
+    currentMatchIndex: Int,
 ) {
     var i = 0
     while (i < text.length) {
@@ -361,9 +400,13 @@ private fun androidx.compose.ui.text.AnnotatedString.Builder.appendWithHighlight
             break
         }
         if (idx > i) withStyle(SpanStyle(color = base)) { append(text.substring(i, idx)) }
-        withStyle(SpanStyle(color = base, background = HighlightBg.copy(alpha = 0.6f))) {
+        val isCurrent = counter[0] == currentMatchIndex
+        val bg = if (isCurrent) CurrentMatchBg.copy(alpha = 0.7f) else HighlightBg.copy(alpha = 0.6f)
+        val fg = if (isCurrent) Color.White else base
+        withStyle(SpanStyle(color = fg, background = bg)) {
             append(text.substring(idx, idx + query.length))
         }
+        counter[0]++
         i = idx + query.length
     }
 }
