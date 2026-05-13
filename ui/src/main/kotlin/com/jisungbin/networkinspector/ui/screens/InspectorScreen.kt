@@ -2,6 +2,8 @@ package com.jisungbin.networkinspector.ui.screens
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ContextMenuArea
+import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -26,8 +28,12 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -41,12 +47,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.mutableStateOf
+import java.awt.Cursor
 import com.jisungbin.networkinspector.engine.ConnectionState
 import com.jisungbin.networkinspector.engine.NetworkRow
 import com.jisungbin.networkinspector.ui.AppStore
@@ -55,6 +69,7 @@ import com.jisungbin.networkinspector.ui.SortKey
 import com.jisungbin.networkinspector.ui.StatusFilter
 import com.jisungbin.networkinspector.ui.UiState
 import com.jisungbin.networkinspector.ui.util.applyFilters
+import com.jisungbin.networkinspector.ui.util.toCurl
 import kotlinx.coroutines.delay
 
 private data class Column(val key: SortKey, val label: String, val initialWidth: Dp)
@@ -84,6 +99,8 @@ fun InspectorScreen(state: UiState, store: AppStore) {
     val columnWidths = remember {
         mutableStateMapOf<SortKey, Dp>().apply { Columns.forEach { this[it.key] = it.initialWidth } }
     }
+    var leftPaneWidth by remember { mutableStateOf(760.dp) }
+    val density = LocalDensity.current
 
     Column(modifier = Modifier.fillMaxSize()) {
         Toolbar(state, streaming, store)
@@ -91,22 +108,46 @@ fun InspectorScreen(state: UiState, store: AppStore) {
         FilterBar(state, store)
         Divider()
         Row(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.weight(1.4f).fillMaxHeight()) {
+            Box(modifier = Modifier.width(leftPaneWidth).fillMaxHeight().clipToBounds()) {
                 RequestTable(
                     rows = sorted,
                     state = state,
                     columnWidths = columnWidths,
                     onClickHeader = { store.toggleSort(it) },
                     onClickRow = { store.selectRow(it) },
+                    onFilterHost = { store.updateSearch(it) },
                 )
             }
-            Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
-            Box(modifier = Modifier.weight(1.6f).fillMaxHeight()) {
+            SplitterHandle(
+                onDrag = { deltaPx ->
+                    val deltaDp = with(density) { deltaPx.toDp() }
+                    leftPaneWidth = (leftPaneWidth + deltaDp)
+                        .coerceAtLeast(360.dp)
+                        .coerceAtMost(1600.dp)
+                },
+            )
+            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 if (selected != null) RequestDetail(selected)
-                else InterceptRulesPanel(state, store)
+                else EmptyDetailHint()
             }
         }
     }
+}
+
+@Composable
+private fun SplitterHandle(onDrag: (Float) -> Unit) {
+    Box(
+        modifier = Modifier
+            .width(6.dp)
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.outlineVariant)
+            .pointerHoverIcon(PointerIcon(Cursor(Cursor.E_RESIZE_CURSOR)))
+            .pointerInput(Unit) {
+                detectDragGestures { _, dragAmount ->
+                    onDrag(dragAmount.x)
+                }
+            }
+    )
 }
 
 @Composable
@@ -159,8 +200,10 @@ private fun RequestTable(
     columnWidths: androidx.compose.runtime.snapshots.SnapshotStateMap<SortKey, Dp>,
     onClickHeader: (SortKey) -> Unit,
     onClickRow: (Long) -> Unit,
+    onFilterHost: (String) -> Unit,
 ) {
     val listState = rememberLazyListState()
+    val clipboard = LocalClipboardManager.current
     LaunchedEffect(rows.size, state.autoScroll, state.paused) {
         if (state.autoScroll && !state.paused && rows.isNotEmpty()) {
             listState.animateScrollToItem(rows.size - 1)
@@ -177,16 +220,35 @@ private fun RequestTable(
         Divider()
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             items(rows, key = { it.connectionId }) { row ->
-                DataRow(
-                    row = row,
-                    selected = row.connectionId == state.selectedRowId,
-                    widths = columnWidths,
-                    onClick = { onClickRow(row.connectionId) },
-                )
+                ContextMenuArea(
+                    items = {
+                        listOf(
+                            ContextMenuItem("Copy URL") {
+                                clipboard.setText(AnnotatedString(row.url))
+                            },
+                            ContextMenuItem("Copy as cURL") {
+                                clipboard.setText(AnnotatedString(row.toCurl()))
+                            },
+                            ContextMenuItem("Filter to host") {
+                                onFilterHost(hostOf(row.url))
+                            },
+                        )
+                    },
+                ) {
+                    DataRow(
+                        row = row,
+                        selected = row.connectionId == state.selectedRowId,
+                        widths = columnWidths,
+                        onClick = { onClickRow(row.connectionId) },
+                    )
+                }
             }
         }
     }
 }
+
+private fun hostOf(url: String): String =
+    url.removePrefix("https://").removePrefix("http://").substringBefore("/").substringBefore("?")
 
 @Composable
 private fun HeaderRow(
@@ -207,6 +269,7 @@ private fun HeaderRow(
             Row(
                 modifier = Modifier
                     .width(w)
+                    .clipToBounds()
                     .clickable { onClick(col.key) }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -217,6 +280,7 @@ private fun HeaderRow(
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (sortKey == col.key) {
                     Spacer(Modifier.width(4.dp))
@@ -283,12 +347,14 @@ private fun DataRow(
     ) {
         Columns.forEachIndexed { idx, col ->
             val w = widths[col.key] ?: col.initialWidth
-            Box(modifier = Modifier.width(w).padding(horizontal = 8.dp)) {
-                Text(
+            Box(modifier = Modifier.width(w).clipToBounds().padding(horizontal = 8.dp)) {
+                if (col.key == SortKey.URL) UrlCell(row.url)
+                else Text(
                     text = cellText(row, col.key),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             if (idx != Columns.lastIndex) Spacer(Modifier.width(6.dp))
@@ -356,6 +422,51 @@ private fun rowComparator(key: SortKey, descending: Boolean): Comparator<Network
         SortKey.START_TIME -> compareBy { it.startTimestamp }
     }
     return if (descending) base.reversed() else base
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UrlCell(url: String) {
+    val endpoint = remember(url) { endpointOf(url) }
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(url, fontFamily = FontFamily.Monospace) } },
+        state = rememberTooltipState(),
+    ) {
+        Text(
+            text = endpoint,
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private fun endpointOf(url: String): String {
+    val noScheme = url.removePrefix("https://").removePrefix("http://")
+    val slash = noScheme.indexOf('/')
+    return if (slash < 0) "/" else noScheme.substring(slash)
+}
+
+@Composable
+private fun EmptyDetailHint() {
+    androidx.compose.foundation.layout.Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+    ) {
+        Text(
+            "Select a request",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.outline,
+        )
+        Text(
+            "headers, body, cURL export will appear here",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

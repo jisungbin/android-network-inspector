@@ -4,7 +4,16 @@ import com.jisungbin.networkinspector.adb.DeviceSnapshot
 import com.jisungbin.networkinspector.engine.AttachMode
 import com.jisungbin.networkinspector.engine.NetworkRow
 
+enum class Destination { DEVICES, INSPECTOR, RULES, SETTINGS }
+enum class ThemePreference(val label: String) {
+    SYSTEM("Follow system"),
+    LIGHT("Light"),
+    DARK("Dark"),
+}
+
 data class UiState(
+    val destination: Destination = Destination.DEVICES,
+    val theme: ThemePreference = ThemePreference.SYSTEM,
     val devices: List<DeviceSnapshot> = emptyList(),
     val deviceSerial: String? = null,
     val packages: List<String> = emptyList(),

@@ -116,6 +116,9 @@ class AppStore {
     fun updateMethodFilter(m: String?) = _state.update { it.copy(methodFilter = m) }
     fun selectRow(id: Long?) = _state.update { it.copy(selectedRowId = id) }
 
+    fun setDestination(d: Destination) = _state.update { it.copy(destination = d) }
+    fun setTheme(t: ThemePreference) = _state.update { it.copy(theme = t) }
+
     fun toggleSort(key: SortKey) = _state.update {
         if (it.sortKey == key) it.copy(sortDescending = !it.sortDescending)
         else it.copy(sortKey = key, sortDescending = false)
@@ -157,7 +160,10 @@ class AppStore {
                 session = opened
                 this@AppStore.session = opened
                 _state.update {
-                    it.copy(attach = AttachState.Streaming(opened.pid, opened.hostPort))
+                    it.copy(
+                        attach = AttachState.Streaming(opened.pid, opened.hostPort),
+                        destination = Destination.INSPECTOR,
+                    )
                 }
                 streamJob = scope.launch(Dispatchers.IO) {
                     opened.networkEvents().collect { event ->
@@ -208,7 +214,14 @@ class AppStore {
             streamJob = null
             withContext(Dispatchers.IO) { session?.close() }
             session = null
-            _state.update { it.copy(attach = AttachState.Idle, rows = emptyList(), selectedRowId = null) }
+            _state.update {
+                it.copy(
+                    attach = AttachState.Idle,
+                    rows = emptyList(),
+                    selectedRowId = null,
+                    destination = Destination.DEVICES,
+                )
+            }
         }
     }
 
