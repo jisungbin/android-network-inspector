@@ -70,7 +70,21 @@ cd android-network-inspector
   --activity com.example.app/.MainActivity
 ```
 
-To package a `.dmg`:
+## Install locally as a `.app`
+
+For day-to-day use you can drop a self-contained `.app` bundle into `/Applications` and launch it from Spotlight instead of running Gradle every time:
+
+```bash
+./gradlew syncStudioBundle           # one-time: extract Studio device-side jars
+./gradlew :ui:createDistributable    # build the .app bundle
+cp -R "ui/build/compose/binaries/main/app/Network Inspector.app" /Applications/
+```
+
+After that, open it from Spotlight (`Network Inspector`) or `/Applications`. The bundle ships its own JRE, so no system Java is needed at runtime.
+
+The `.app` is **machine-local**: the Studio bundle path is baked into the launch args as an absolute path at build time (see `ui/build.gradle.kts`), so the bundle only runs on the same Mac it was built on. If you move it to another machine, run `syncStudioBundle` + `createDistributable` again there.
+
+If you prefer a DMG installer instead:
 
 ```bash
 ./gradlew :ui:packageDmg
