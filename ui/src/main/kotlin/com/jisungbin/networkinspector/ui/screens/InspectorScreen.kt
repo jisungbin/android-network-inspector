@@ -348,16 +348,20 @@ private fun DataRow(
 
 @Composable
 private fun useHighlight(timestamp: Long): Float {
-    var alpha by remember(timestamp) { mutableFloatStateOf(1f) }
+    val deadline = timestamp + HIGHLIGHT_MS
+    val nowAtStart = remember(timestamp) { System.currentTimeMillis() }
+    if (nowAtStart >= deadline) return 0f
+    var alpha by remember(timestamp) {
+        mutableFloatStateOf(((deadline - nowAtStart) / HIGHLIGHT_MS.toFloat()).coerceIn(0f, 1f))
+    }
     LaunchedEffect(timestamp) {
-        val start = System.currentTimeMillis()
         while (true) {
-            val elapsed = System.currentTimeMillis() - start
-            if (elapsed >= HIGHLIGHT_MS) {
+            val now = System.currentTimeMillis()
+            if (now >= deadline) {
                 alpha = 0f
                 break
             }
-            alpha = 1f - elapsed / HIGHLIGHT_MS.toFloat()
+            alpha = ((deadline - now) / HIGHLIGHT_MS.toFloat()).coerceIn(0f, 1f)
             delay(50)
         }
     }
@@ -384,7 +388,7 @@ private fun cellText(row: NetworkRow, key: SortKey): String = when (key) {
     SortKey.URL -> row.url
     SortKey.RECEIVED -> row.responseAtMs?.let { timeFormatter.format(java.time.Instant.ofEpochMilli(it)) } ?: "—"
     SortKey.PROTO -> row.protocol.name
-    SortKey.DURATION -> row.endTimestamp?.let { ((it - row.startTimestamp) / 1_000_000L).toString() } ?: "—"
+    SortKey.DURATION -> row.endTimestamp?.let { "%,d".format((it - row.startTimestamp) / 1_000_000L) } ?: "—"
     SortKey.SIZE -> sizeText((row.requestBody?.size ?: 0) + (row.responseBody?.size ?: 0))
     SortKey.START_TIME -> row.startTimestamp.toString()
 }
