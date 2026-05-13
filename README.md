@@ -113,9 +113,21 @@ If attach fails, scroll to the bottom of the log file — the diagnose block pri
 ## Architecture (modules)
 
 ```
-core/   — adb/ + deploy/ + transport/ + inspector/ + intercept/ + log/
-cli/    — command-line entry point (list-devices, attach)
-ui/     — Compose Desktop GUI (Home + Inspector screens, intercept rules)
+log       — DiskLogger only (rolling disk log at ~/Desktop/network-inspector.log)
+adb       — ddmlib wrappers: device + shell + sync + port forward + pid lookup
+protocol  — Studio prebuilt jars + gRPC TransportClient + Configs +
+              Inspector command builders + RuleSender (this is the only
+              module #2 proto self-build migration will touch)
+engine    — orchestration + domain: AgentDeployer, DaemonRunner,
+              AgentAttacher, AttachOrchestrator/AttachSession,
+              NetworkRow, RowAggregator, NetworkEventRenderer
+cli       — command-line entry point (list-devices, attach)
+ui        — Compose Desktop GUI (Home + Inspector screens, intercept rules)
+
+Dependency direction:
+  cli, ui  ->  engine  ->  protocol  ->  studio-bundle jars
+                       \->  adb      ->  ddmlib
+                       \->  log
 ```
 
 ## Acknowledgments
