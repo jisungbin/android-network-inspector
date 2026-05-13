@@ -111,8 +111,6 @@ fun InspectorScreen(state: UiState, store: AppStore) {
     val density = LocalDensity.current
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Toolbar(state, streaming, store)
-        Divider()
         FilterBar(state, store)
         Divider()
         Row(modifier = Modifier.fillMaxSize()) {
@@ -156,29 +154,6 @@ private fun SplitterHandle(onDrag: (Float) -> Unit) {
                 }
             }
     )
-}
-
-@Composable
-private fun Toolbar(state: UiState, streaming: AttachState.Streaming?, store: AppStore) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            "pid=${streaming?.pid}  port=${streaming?.hostPort}  ${state.packageName}",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Spacer(Modifier.weight(1f))
-        TextButton(onClick = { store.setPaused(!state.paused) }) {
-            Text(if (state.paused) "Resume" else "Pause")
-        }
-        TextButton(onClick = { store.clearRows() }) { Text("Clear") }
-        TextButton(onClick = { store.toggleAutoScroll() }) {
-            Text(if (state.autoScroll) "Auto-scroll: on" else "Auto-scroll: off")
-        }
-        TextButton(onClick = { store.detach() }) { Text("Detach") }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
