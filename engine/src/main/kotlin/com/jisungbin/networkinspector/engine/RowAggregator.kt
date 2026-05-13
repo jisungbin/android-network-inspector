@@ -32,6 +32,7 @@ class RowAggregator {
                 existing.copy(
                     statusCode = r.responseCode.takeIf { it > 0 },
                     responseHeaders = r.headersList.map { it.key to it.valuesList.toList() },
+                    responseAtMs = System.currentTimeMillis(),
                 )
             }
             NIP.HttpConnectionEvent.UnionCase.REQUEST_PAYLOAD ->

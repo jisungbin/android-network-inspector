@@ -30,13 +30,13 @@ data class UiState(
     val statusFilter: StatusFilter = StatusFilter.All,
     val methodFilter: String? = null,
     val interceptRules: List<InterceptRule> = emptyList(),
-    val sortKey: SortKey = SortKey.START_TIME,
+    val sortKey: SortKey = SortKey.RECEIVED,
     val sortDescending: Boolean = false,
     val paused: Boolean = false,
     val autoScroll: Boolean = true,
 )
 
-enum class SortKey { METHOD, STATUS, URL, PROTO, DURATION, SIZE, START_TIME }
+enum class SortKey { METHOD, STATUS, URL, RECEIVED, DURATION, SIZE, PROTO, START_TIME }
 
 sealed class AttachState {
     data object Idle : AttachState()

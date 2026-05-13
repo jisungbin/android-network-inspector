@@ -153,10 +153,22 @@ private fun BodyBlock(
     clipboard: ClipboardManager,
 ) {
     val decoded = remember(body, headers, showFull) { decodeBody(body, headers, showFull = showFull) }
+    var depthOverride by remember(body) { androidx.compose.runtime.mutableIntStateOf(2) }
+    var generation by remember(body) { androidx.compose.runtime.mutableIntStateOf(0) }
     Column {
         Row {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.weight(1f))
+            if (decoded?.isJson == true) {
+                TextButton(onClick = {
+                    depthOverride = Int.MAX_VALUE
+                    generation++
+                }) { Text("Expand all") }
+                TextButton(onClick = {
+                    depthOverride = 0
+                    generation++
+                }) { Text("Collapse all") }
+            }
             if (decoded != null && !decoded.isBinary) {
                 TextButton(onClick = {
                     clipboard.setText(AnnotatedString(decoded.text))
@@ -187,7 +199,13 @@ private fun BodyBlock(
         Spacer(Modifier.height(4.dp))
         SelectionContainer {
             if (decoded.isJson) {
-                JsonViewer(json = decoded.text, search = search)
+                androidx.compose.runtime.key(generation) {
+                    JsonViewer(
+                        json = decoded.text,
+                        search = search,
+                        defaultExpandedDepth = depthOverride,
+                    )
+                }
             } else {
                 Text(
                     text = highlightOccurrences(decoded.text, search),

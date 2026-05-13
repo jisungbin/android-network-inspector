@@ -80,10 +80,16 @@ private val Columns = listOf(
     Column(SortKey.METHOD, "METHOD", 70.dp),
     Column(SortKey.STATUS, "STATUS", 70.dp),
     Column(SortKey.URL, "URL", 460.dp),
-    Column(SortKey.PROTO, "PROTO", 80.dp),
+    Column(SortKey.RECEIVED, "RECEIVED", 90.dp),
     Column(SortKey.DURATION, "MS", 60.dp),
     Column(SortKey.SIZE, "SIZE", 70.dp),
+    Column(SortKey.PROTO, "PROTO", 80.dp),
 )
+
+private val timeFormatter: java.time.format.DateTimeFormatter =
+    java.time.format.DateTimeFormatter
+        .ofPattern("HH:mm:ss")
+        .withZone(java.time.ZoneId.systemDefault())
 
 private const val HIGHLIGHT_MS = 1100L
 
@@ -401,6 +407,7 @@ private fun cellText(row: NetworkRow, key: SortKey): String = when (key) {
         else -> "…"
     }
     SortKey.URL -> row.url
+    SortKey.RECEIVED -> row.responseAtMs?.let { timeFormatter.format(java.time.Instant.ofEpochMilli(it)) } ?: "—"
     SortKey.PROTO -> row.protocol.name
     SortKey.DURATION -> row.endTimestamp?.let { ((it - row.startTimestamp) / 1_000_000L).toString() } ?: "—"
     SortKey.SIZE -> sizeText((row.requestBody?.size ?: 0) + (row.responseBody?.size ?: 0))
@@ -416,13 +423,14 @@ private fun sizeText(s: Int): String = when {
 
 private fun rowComparator(key: SortKey, descending: Boolean): Comparator<NetworkRow> {
     val base: Comparator<NetworkRow> = when (key) {
-        SortKey.METHOD -> compareBy { it.method }
-        SortKey.STATUS -> compareBy { it.statusCode ?: Int.MAX_VALUE }
-        SortKey.URL -> compareBy { it.url }
-        SortKey.PROTO -> compareBy { it.protocol.name }
-        SortKey.DURATION -> compareBy { it.endTimestamp?.let { e -> e - it.startTimestamp } ?: Long.MAX_VALUE }
-        SortKey.SIZE -> compareBy { (it.requestBody?.size ?: 0) + (it.responseBody?.size ?: 0) }
-        SortKey.START_TIME -> compareBy { it.startTimestamp }
+        SortKey.METHOD -> compareBy<NetworkRow> { it.method }
+        SortKey.STATUS -> compareBy<NetworkRow> { it.statusCode ?: Int.MAX_VALUE }
+        SortKey.URL -> compareBy<NetworkRow> { it.url }
+        SortKey.RECEIVED -> compareBy<NetworkRow> { it.responseAtMs ?: Long.MAX_VALUE }
+        SortKey.PROTO -> compareBy<NetworkRow> { it.protocol.name }
+        SortKey.DURATION -> compareBy<NetworkRow> { row -> row.endTimestamp?.let { it - row.startTimestamp } ?: Long.MAX_VALUE }
+        SortKey.SIZE -> compareBy<NetworkRow> { (it.requestBody?.size ?: 0) + (it.responseBody?.size ?: 0) }
+        SortKey.START_TIME -> compareBy<NetworkRow> { it.startTimestamp }
     }
     return if (descending) base.reversed() else base
 }

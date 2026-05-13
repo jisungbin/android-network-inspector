@@ -36,7 +36,12 @@ private val BracketColor = Color(0xFF455A64)
 private val HighlightBg = Color(0xFFFFEB3B)
 
 @Composable
-fun JsonViewer(json: String, search: String, modifier: Modifier = Modifier) {
+fun JsonViewer(
+    json: String,
+    search: String,
+    defaultExpandedDepth: Int = 2,
+    modifier: Modifier = Modifier,
+) {
     val element = remember(json) { runCatching { Json.parseToJsonElement(json) }.getOrNull() }
     if (element == null) {
         Text(
@@ -48,7 +53,7 @@ fun JsonViewer(json: String, search: String, modifier: Modifier = Modifier) {
         return
     }
     Column(modifier = modifier) {
-        JsonNode(element, indent = 0, trailingComma = false, search = search, defaultExpandedDepth = 2)
+        JsonNode(element, indent = 0, trailingComma = false, search = search, defaultExpandedDepth = defaultExpandedDepth)
     }
 }
 
