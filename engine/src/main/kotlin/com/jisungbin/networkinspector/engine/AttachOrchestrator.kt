@@ -2,6 +2,7 @@ package com.jisungbin.networkinspector.engine
 
 import com.android.ddmlib.IDevice
 import com.android.tools.app.inspection.AppInspection
+import com.android.tools.profiler.proto.Commands
 import com.android.tools.profiler.proto.Common
 import com.jisungbin.networkinspector.adb.PortForwarder
 import com.jisungbin.networkinspector.adb.pidOf
@@ -13,10 +14,20 @@ import com.jisungbin.networkinspector.protocol.TRANSPORT_SOCKET_NAME
 import com.jisungbin.networkinspector.protocol.TransportClient
 import com.jisungbin.networkinspector.protocol.createNetworkInspectorCommand
 import com.jisungbin.networkinspector.protocol.startNetworkInspectionCommand
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import studio.network.inspection.NetworkInspectorProtocol
 import java.io.File
 
@@ -98,10 +109,27 @@ class AttachSession(
     private val forwarder: PortForwarder,
     private val packageName: String,
 ) : AutoCloseable {
-    fun rawEvents(): Flow<Common.Event> = client.events()
-        .onEach { DiskLogger.log("raw-event: kind=${it.kind} pid=${it.pid} groupId=${it.groupId} ts=${it.timestamp}") }
+    private val sessionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val streamIdLatch = CompletableDeferred<Long>()
 
-    fun networkEvents(): Flow<NetworkInspectorProtocol.Event> = client.events()
+    @Volatile
+    var streamId: Long = 0L
+        private set
+
+    private val sharedEvents: SharedFlow<Common.Event> = client.events()
+        .onEach { event ->
+            DiskLogger.log("raw-event: kind=${event.kind} pid=${event.pid} groupId=${event.groupId} ts=${event.timestamp}")
+            if (streamId == 0L && event.kind == Common.Event.Kind.STREAM && event.groupId != 0L) {
+                streamId = event.groupId
+                if (!streamIdLatch.isCompleted) streamIdLatch.complete(event.groupId)
+                DiskLogger.log("learned streamId=${event.groupId} from STREAM event")
+            }
+        }
+        .shareIn(sessionScope, SharingStarted.Eagerly, replay = 0)
+
+    fun rawEvents(): Flow<Common.Event> = sharedEvents
+
+    fun networkEvents(): Flow<NetworkInspectorProtocol.Event> = sharedEvents
         .filter { it.kind == Common.Event.Kind.APP_INSPECTION_EVENT }
         .filter { it.appInspectionEvent.inspectorId == NETWORK_INSPECTOR_ID }
         .mapNotNull { event ->
@@ -113,17 +141,25 @@ class AttachSession(
         }
         .onEach { DiskLogger.log("net-event: ${it.unionCase} ts=${it.timestamp}") }
 
+    private fun awaitStreamIdBlocking(timeoutMs: Long = 5_000): Long {
+        if (streamId != 0L) return streamId
+        return runBlocking {
+            withTimeoutOrNull(timeoutMs) { streamIdLatch.await() } ?: 0L
+        }
+    }
+
     fun sendCreateAndStart() {
+        val sid = awaitStreamIdBlocking()
         val agentLibFileName = "libjvmtiagent_${deployResult.abi}.so"
         val agentConfigPath = "${AgentDeployer.DEVICE_DIR}/${DaemonRunner.AGENT_CONFIG}"
-        DiskLogger.log("send ATTACH_AGENT pid=$pid lib=$agentLibFileName cfg=$agentConfigPath pkg=$packageName")
+        DiskLogger.log("send ATTACH_AGENT streamId=$sid pid=$pid lib=$agentLibFileName cfg=$agentConfigPath pkg=$packageName")
         client.execute(
-            com.android.tools.profiler.proto.Commands.Command.newBuilder()
-                .setStreamId(0L)
+            Commands.Command.newBuilder()
+                .setStreamId(sid)
                 .setPid(pid)
-                .setType(com.android.tools.profiler.proto.Commands.Command.CommandType.ATTACH_AGENT)
+                .setType(Commands.Command.CommandType.ATTACH_AGENT)
                 .setAttachAgent(
-                    com.android.tools.profiler.proto.Commands.AttachAgent.newBuilder()
+                    Commands.AttachAgent.newBuilder()
                         .setAgentLibFileName(agentLibFileName)
                         .setAgentConfigPath(agentConfigPath)
                         .setPackageName(packageName)
@@ -132,35 +168,20 @@ class AttachSession(
         )
         Thread.sleep(500)
 
-        DiskLogger.log("send CreateInspectorCommand pid=$pid dex=${deployResult.networkInspectorPath}")
+        DiskLogger.log("send CreateInspectorCommand streamId=$sid pid=$pid dex=${deployResult.networkInspectorPath}")
         client.execute(
             createNetworkInspectorCommand(
                 pid = pid,
-                streamId = 0L,
+                streamId = sid,
                 dexPath = deployResult.networkInspectorPath,
             )
         )
-        DiskLogger.log("send StartInspectionCommand pid=$pid")
-        client.execute(startNetworkInspectionCommand(pid = pid, streamId = 0L))
-    }
-
-    fun sendRaw(command: NetworkInspectorProtocol.Command) {
-        val app = AppInspection.AppInspectionCommand.newBuilder()
-            .setInspectorId(NETWORK_INSPECTOR_ID)
-            .setRawInspectorCommand(
-                AppInspection.RawCommand.newBuilder().setContent(command.toByteString())
-            )
-            .build()
-        val full = com.android.tools.profiler.proto.Commands.Command.newBuilder()
-            .setStreamId(0L)
-            .setPid(pid)
-            .setType(com.android.tools.profiler.proto.Commands.Command.CommandType.APP_INSPECTION)
-            .setAppInspectionCommand(app)
-            .build()
-        client.execute(full)
+        DiskLogger.log("send StartInspectionCommand streamId=$sid pid=$pid")
+        client.execute(startNetworkInspectionCommand(pid = pid, streamId = sid))
     }
 
     override fun close() {
+        runCatching { sessionScope.cancel() }
         runCatching { client.close() }
         forwarder.remove(hostPort, TRANSPORT_SOCKET_NAME)
         runner.stop()

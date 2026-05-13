@@ -94,7 +94,6 @@ The Inspector screen shows the live request table. Selecting a row opens the req
 - **R8-stripped OkHttp/HttpURLConnection bypasses interception.** If the inspector class is gone, hooks can't be installed.
 - **Apps with their own JVMTI agent may conflict** (e.g. some hot-swap or RASP tooling). Tombstones with `SEGV` inside `libjvmtiagent.so` on `Agent_OnAttach` are the usual symptom — try cold-start mode first, or test against a clean sample app.
 - Tracks all traffic from the moment of attach; pre-attach requests are not captured.
-- `streamId` is currently hard-coded to `0` in commands. Acceptable for single-device usage but should be replaced by the deviceId reported on the `STREAM` event for robustness.
 
 ## Troubleshooting
 

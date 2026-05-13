@@ -17,7 +17,7 @@ data class HostRule(
 )
 
 object RuleSender {
-    fun apply(client: TransportClient, pid: Int, rules: List<HostRule>) {
+    fun apply(client: TransportClient, pid: Int, streamId: Long, rules: List<HostRule>) {
         rules.forEachIndexed { index, rule ->
             val criteriaBuilder = NIP.InterceptCriteria.newBuilder()
                 .setHost(parseHost(rule.urlPattern))
@@ -86,7 +86,7 @@ object RuleSender {
                 )
                 .build()
             val full = Commands.Command.newBuilder()
-                .setStreamId(0L)
+                .setStreamId(streamId)
                 .setPid(pid)
                 .setType(Commands.Command.CommandType.APP_INSPECTION)
                 .setAppInspectionCommand(appInspection)

@@ -240,7 +240,7 @@ class AppStore {
             }
         val s = session ?: return
         scope.launch(Dispatchers.IO) {
-            com.jisungbin.networkinspector.protocol.RuleSender.apply(s.client, s.pid, rules)
+            com.jisungbin.networkinspector.protocol.RuleSender.apply(s.client, s.pid, s.streamId, rules)
         }
     }
 
