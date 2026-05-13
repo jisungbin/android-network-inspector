@@ -4,7 +4,7 @@ coroutines = "1.10.1"
 ddmlib = "31.7.0"
 protobuf = "4.28.3"
 slf4j = "2.0.16"
-logback = "1.5.12"
+logback = "1.5.32"
 compose = "1.7.3"
 kotlinx-serialization-json = "1.7.3"
 
