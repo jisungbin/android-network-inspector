@@ -3,6 +3,8 @@ package com.jisungbin.networkinspector.ui
 import com.jisungbin.networkinspector.adb.DeviceSnapshot
 import com.jisungbin.networkinspector.engine.AttachMode
 import com.jisungbin.networkinspector.engine.NetworkRow
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 enum class Destination { DEVICES, INSPECTOR, RULES, SETTINGS }
 enum class ThemePreference(val label: String) {
@@ -32,6 +34,7 @@ data class UiState(
     val statusFilter: StatusFilter = StatusFilter.All,
     val methodFilter: String? = null,
     val interceptRules: List<InterceptRule> = emptyList(),
+    val ruleHits: Map<String, Int> = emptyMap(),
     val sortKey: SortKey = SortKey.RECEIVED,
     val sortDescending: Boolean = false,
     val paused: Boolean = false,
@@ -57,6 +60,7 @@ enum class AttachPhase(val label: String) {
 
 enum class StatusFilter { All, Success, Redirect, ClientError, ServerError, InFlight }
 
+@Serializable
 data class InterceptRule(
     val id: String,
     val name: String,
@@ -67,4 +71,6 @@ data class InterceptRule(
     val replacementBody: String,
     val addedHeaders: List<Pair<String, String>> = emptyList(),
     val enabled: Boolean,
+    @Transient
+    val protocolRuleId: Int? = null,
 )

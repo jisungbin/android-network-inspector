@@ -57,7 +57,10 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -332,7 +335,7 @@ private fun DataRow(
         Columns.forEachIndexed { idx, col ->
             val w = widths[col.key] ?: col.initialWidth
             Box(modifier = Modifier.width(w).clipToBounds().padding(horizontal = 8.dp)) {
-                if (col.key == SortKey.URL) UrlCell(row.url)
+                if (col.key == SortKey.URL) UrlCell(row.url, mocked = row.mocked)
                 else Text(
                     text = cellText(row, col.key),
                     style = MaterialTheme.typography.bodySmall,
@@ -416,15 +419,24 @@ private fun rowComparator(key: SortKey, descending: Boolean): Comparator<Network
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun UrlCell(url: String) {
+private fun UrlCell(url: String, mocked: Boolean = false) {
     val endpoint = remember(url) { endpointOf(url) }
+    val mockColor = Color(0xFFEF6C00)
+    val text = remember(endpoint, mocked) {
+        buildAnnotatedString {
+            if (mocked) {
+                withStyle(SpanStyle(color = mockColor, fontWeight = FontWeight.Bold)) { append("MOCK ") }
+            }
+            append(endpoint)
+        }
+    }
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = { PlainTooltip { Text(url, fontFamily = FontFamily.Monospace) } },
         state = rememberTooltipState(),
     ) {
         Text(
-            text = endpoint,
+            text = text,
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,

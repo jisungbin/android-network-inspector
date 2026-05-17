@@ -13,6 +13,7 @@ import com.jisungbin.networkinspector.engine.AttachSession
 import com.jisungbin.networkinspector.engine.AttachStage
 import com.jisungbin.networkinspector.adb.pidOf
 import com.jisungbin.networkinspector.engine.RowAggregator
+import com.jisungbin.networkinspector.ui.util.RulesStorage
 import com.jisungbin.networkinspector.ui.util.SessionExporter
 import com.jisungbin.networkinspector.ui.util.applyFilters
 import kotlinx.coroutines.CoroutineScope
@@ -38,8 +39,13 @@ class AppStore {
     private var session: AttachSession? = null
     private var streamJob: Job? = null
     private val aggregator = RowAggregator()
+    private var nextProtocolRuleId = 1
 
     init {
+        val saved = RulesStorage.load()
+        if (saved.isNotEmpty()) {
+            _state.update { it.copy(interceptRules = saved) }
+        }
         scope.launch { refreshDevices() }
     }
 
@@ -169,11 +175,23 @@ class AppStore {
                 }
                 session = opened
                 this@AppStore.session = opened
+                val rulesWithFreshIds = _state.value.interceptRules.map { r ->
+                    r.copy(protocolRuleId = nextProtocolRuleId++)
+                }
                 _state.update {
                     it.copy(
                         attach = AttachState.Streaming(opened.pid, opened.hostPort),
                         destination = Destination.INSPECTOR,
+                        interceptRules = rulesWithFreshIds,
                     )
+                }
+                scope.launch(Dispatchers.IO) {
+                    rulesWithFreshIds.forEach { r ->
+                        com.jisungbin.networkinspector.protocol.RuleSender.sendAdd(
+                            opened.client, opened.pid, opened.streamId,
+                            r.protocolRuleId!!, r.toHostRule(),
+                        )
+                    }
                 }
                 streamJob = scope.launch(Dispatchers.IO) {
                     opened.networkEvents().collect { event ->
@@ -183,8 +201,15 @@ class AppStore {
                         }
                         if (_state.value.paused) return@collect
                         _state.update { ui ->
-                            val replaced = ui.rows.replaceOrAppend(updated)
-                            ui.copy(rows = replaced)
+                            val previousMocked = ui.rows.firstOrNull { it.connectionId == updated.connectionId }?.mocked ?: false
+                            val justMocked = updated.mocked && !previousMocked
+                            val newHits = if (justMocked) {
+                                val matching = ui.interceptRules.firstOrNull { matchesRow(updated, it) }
+                                if (matching != null) {
+                                    ui.ruleHits + (matching.id to ((ui.ruleHits[matching.id] ?: 0) + 1))
+                                } else ui.ruleHits
+                            } else ui.ruleHits
+                            ui.copy(rows = ui.rows.replaceOrAppend(updated), ruleHits = newHits)
                         }
                     }
                 }
@@ -241,6 +266,7 @@ class AppStore {
             streamJob = null
             withContext(Dispatchers.IO) { session?.close() }
             session = null
+            nextProtocolRuleId = 1
             _state.update {
                 it.copy(
                     attach = AttachState.Idle,
@@ -249,41 +275,93 @@ class AppStore {
                     destination = Destination.DEVICES,
                     inspectorReadyAt = null,
                     firstEventAt = null,
+                    interceptRules = it.interceptRules.map { r -> r.copy(protocolRuleId = null) },
+                    ruleHits = emptyMap(),
                 )
             }
         }
     }
 
-    fun upsertRule(rule: InterceptRule) = _state.update {
-        val existing = it.interceptRules.indexOfFirst { r -> r.id == rule.id }
-        val next = if (existing >= 0) it.interceptRules.toMutableList().apply { this[existing] = rule }
-        else it.interceptRules + rule
-        it.copy(interceptRules = next)
+    fun upsertRule(rule: InterceptRule) {
+        val s = session
+        val previous = _state.value.interceptRules.firstOrNull { it.id == rule.id }
+        val protocolId = previous?.protocolRuleId ?: if (s != null) nextProtocolRuleId++ else null
+        val finalRule = rule.copy(protocolRuleId = protocolId)
+        _state.update { state ->
+            val idx = state.interceptRules.indexOfFirst { it.id == rule.id }
+            val next = if (idx < 0) state.interceptRules + finalRule
+            else state.interceptRules.toMutableList().apply { this[idx] = finalRule }
+            state.copy(interceptRules = next)
+        }
+        if (s != null && protocolId != null) {
+            val isNew = previous?.protocolRuleId == null
+            scope.launch(Dispatchers.IO) {
+                val hostRule = finalRule.toHostRule()
+                if (isNew) {
+                    com.jisungbin.networkinspector.protocol.RuleSender.sendAdd(
+                        s.client, s.pid, s.streamId, protocolId, hostRule,
+                    )
+                } else {
+                    com.jisungbin.networkinspector.protocol.RuleSender.sendUpdate(
+                        s.client, s.pid, s.streamId, protocolId, hostRule,
+                    )
+                }
+            }
+        }
+        persistRules()
     }
 
-    fun removeRule(id: String) = _state.update {
-        it.copy(interceptRules = it.interceptRules.filterNot { r -> r.id == id })
-    }
-
-    fun applyRulesToInspector() {
-        val rules = _state.value.interceptRules
-            .filter { it.enabled }
-            .map {
-                com.jisungbin.networkinspector.protocol.HostRule(
-                    id = it.id,
-                    urlPattern = it.urlPattern,
-                    method = it.method,
-                    replacementStatus = it.replacementStatus,
-                    replacementContentType = it.replacementContentType,
-                    replacementBody = it.replacementBody,
-                    addedHeaders = it.addedHeaders,
-                    enabled = it.enabled,
+    fun removeRule(id: String) {
+        val s = session
+        val removed = _state.value.interceptRules.firstOrNull { it.id == id }
+        _state.update { state ->
+            state.copy(interceptRules = state.interceptRules.filterNot { it.id == id })
+        }
+        if (s != null && removed?.protocolRuleId != null) {
+            scope.launch(Dispatchers.IO) {
+                com.jisungbin.networkinspector.protocol.RuleSender.sendRemove(
+                    s.client, s.pid, s.streamId, removed.protocolRuleId,
                 )
             }
-        val s = session ?: return
-        scope.launch(Dispatchers.IO) {
-            com.jisungbin.networkinspector.protocol.RuleSender.apply(s.client, s.pid, s.streamId, rules)
         }
+        persistRules()
+    }
+
+    private fun InterceptRule.toHostRule(): com.jisungbin.networkinspector.protocol.HostRule =
+        com.jisungbin.networkinspector.protocol.HostRule(
+            id = id,
+            urlPattern = urlPattern,
+            method = method,
+            replacementStatus = replacementStatus,
+            replacementContentType = replacementContentType,
+            replacementBody = replacementBody,
+            addedHeaders = addedHeaders,
+            enabled = enabled,
+        )
+
+    private fun persistRules() {
+        RulesStorage.save(_state.value.interceptRules)
+    }
+
+    fun importRulesFromFile(file: File) {
+        val imported = runCatching { RulesStorage.importFrom(file) }.getOrNull() ?: return
+        val s = session
+        val withIds = imported.map { it.copy(protocolRuleId = if (s != null) nextProtocolRuleId++ else null) }
+        _state.update { it.copy(interceptRules = withIds) }
+        if (s != null) {
+            scope.launch(Dispatchers.IO) {
+                withIds.forEach { r ->
+                    com.jisungbin.networkinspector.protocol.RuleSender.sendAdd(
+                        s.client, s.pid, s.streamId, r.protocolRuleId!!, r.toHostRule(),
+                    )
+                }
+            }
+        }
+        persistRules()
+    }
+
+    fun exportRulesToFile(file: File) {
+        RulesStorage.exportTo(file, _state.value.interceptRules)
     }
 
     private fun resolveStudioBundleDir(): File {
@@ -305,5 +383,12 @@ class AppStore {
     ): List<com.jisungbin.networkinspector.engine.NetworkRow> {
         val idx = indexOfFirst { it.connectionId == row.connectionId }
         return if (idx >= 0) toMutableList().apply { this[idx] = row } else this + row
+    }
+
+    private fun matchesRow(row: com.jisungbin.networkinspector.engine.NetworkRow, rule: InterceptRule): Boolean {
+        if (!rule.enabled) return false
+        if (rule.method != "ANY" && rule.method.uppercase() != row.method.uppercase()) return false
+        val needle = rule.urlPattern.removePrefix("https://").removePrefix("http://")
+        return needle.isNotBlank() && needle in row.url
     }
 }

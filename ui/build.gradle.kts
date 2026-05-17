@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.compose)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 kotlin {
@@ -18,6 +19,7 @@ dependencies {
     implementation(compose.foundation)
     implementation(libs.kotlin.stdlib)
     implementation(libs.coroutines.core)
+    implementation(libs.kotlinx.serialization.json)
     runtimeOnly(libs.logback.classic)
 }
 

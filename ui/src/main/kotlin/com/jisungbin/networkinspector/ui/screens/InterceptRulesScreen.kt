@@ -18,8 +18,8 @@ fun InterceptRulesScreen(state: UiState, store: AppStore, streaming: Boolean) {
         if (!streaming) {
             Card(modifier = Modifier.padding(12.dp)) {
                 Text(
-                    "Inspector not attached — rules can still be edited and will be applied " +
-                        "when you click \"Apply to inspector\" after attaching.",
+                    "Inspector not attached — rules can still be edited and will sync " +
+                        "automatically once you attach.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(12.dp),

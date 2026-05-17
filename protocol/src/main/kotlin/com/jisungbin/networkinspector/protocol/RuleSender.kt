@@ -17,82 +17,111 @@ data class HostRule(
 )
 
 object RuleSender {
-    fun apply(client: TransportClient, pid: Int, streamId: Long, rules: List<HostRule>) {
-        rules.forEachIndexed { index, rule ->
-            val criteriaBuilder = NIP.InterceptCriteria.newBuilder()
-                .setHost(parseHost(rule.urlPattern))
-                .setPath(parsePath(rule.urlPattern))
-            parseMethod(rule.method)?.let { criteriaBuilder.method = it }
+    fun sendAdd(client: TransportClient, pid: Int, streamId: Long, ruleId: Int, rule: HostRule) {
+        val added = NIP.InterceptRuleAdded.newBuilder()
+            .setRuleId(ruleId)
+            .setRule(buildRuleProto(rule))
+            .build()
+        execute(
+            client, pid, streamId,
+            NIP.InterceptCommand.newBuilder().setInterceptRuleAdded(added).build(),
+        )
+    }
 
-            val transformations = buildList {
+    fun sendUpdate(client: TransportClient, pid: Int, streamId: Long, ruleId: Int, rule: HostRule) {
+        val updated = NIP.InterceptRuleUpdated.newBuilder()
+            .setRuleId(ruleId)
+            .setRule(buildRuleProto(rule))
+            .build()
+        execute(
+            client, pid, streamId,
+            NIP.InterceptCommand.newBuilder().setInterceptRuleUpdated(updated).build(),
+        )
+    }
+
+    fun sendRemove(client: TransportClient, pid: Int, streamId: Long, ruleId: Int) {
+        val removed = NIP.InterceptRuleRemoved.newBuilder()
+            .setRuleId(ruleId)
+            .build()
+        execute(
+            client, pid, streamId,
+            NIP.InterceptCommand.newBuilder().setInterceptRuleRemoved(removed).build(),
+        )
+    }
+
+    private fun buildRuleProto(rule: HostRule): NIP.InterceptRule {
+        val criteriaBuilder = NIP.InterceptCriteria.newBuilder()
+            .setHost(parseHost(rule.urlPattern))
+            .setPath(parsePath(rule.urlPattern))
+        parseMethod(rule.method)?.let { criteriaBuilder.method = it }
+
+        val transformations = buildList {
+            add(
+                NIP.Transformation.newBuilder()
+                    .setStatusCodeReplaced(
+                        NIP.Transformation.StatusCodeReplaced.newBuilder()
+                            .setNewCode(rule.replacementStatus.toString())
+                    )
+                    .build()
+            )
+            if (rule.replacementBody.isNotEmpty()) {
                 add(
                     NIP.Transformation.newBuilder()
-                        .setStatusCodeReplaced(
-                            NIP.Transformation.StatusCodeReplaced.newBuilder()
-                                .setNewCode(rule.replacementStatus.toString())
+                        .setBodyReplaced(
+                            NIP.Transformation.BodyReplaced.newBuilder()
+                                .setBody(ByteString.copyFromUtf8(rule.replacementBody))
                         )
                         .build()
                 )
-                if (rule.replacementBody.isNotEmpty()) {
-                    add(
-                        NIP.Transformation.newBuilder()
-                            .setBodyReplaced(
-                                NIP.Transformation.BodyReplaced.newBuilder()
-                                    .setBody(ByteString.copyFromUtf8(rule.replacementBody))
-                            )
-                            .build()
-                    )
-                }
-                if (rule.replacementContentType.isNotEmpty()) {
-                    add(
-                        NIP.Transformation.newBuilder()
-                            .setHeaderAdded(
-                                NIP.Transformation.HeaderAdded.newBuilder()
-                                    .setName("Content-Type")
-                                    .setValue(rule.replacementContentType)
-                            )
-                            .build()
-                    )
-                }
-                rule.addedHeaders.forEach { (key, value) ->
-                    if (key.isBlank()) return@forEach
-                    add(
-                        NIP.Transformation.newBuilder()
-                            .setHeaderAdded(
-                                NIP.Transformation.HeaderAdded.newBuilder()
-                                    .setName(key)
-                                    .setValue(value)
-                            )
-                            .build()
-                    )
-                }
             }
-            val ruleProto = NIP.InterceptRule.newBuilder()
-                .setEnabled(rule.enabled)
-                .setCriteria(criteriaBuilder.build())
-                .addAllTransformation(transformations)
-                .build()
-            val added = NIP.InterceptRuleAdded.newBuilder()
-                .setRuleId(index + 1)
-                .setRule(ruleProto)
-                .build()
-            val nipCommand = NIP.Command.newBuilder()
-                .setInterceptCommand(NIP.InterceptCommand.newBuilder().setInterceptRuleAdded(added))
-                .build()
-            val appInspection = AppInspection.AppInspectionCommand.newBuilder()
-                .setInspectorId(NETWORK_INSPECTOR_ID)
-                .setRawInspectorCommand(
-                    AppInspection.RawCommand.newBuilder().setContent(nipCommand.toByteString())
+            if (rule.replacementContentType.isNotEmpty()) {
+                add(
+                    NIP.Transformation.newBuilder()
+                        .setHeaderAdded(
+                            NIP.Transformation.HeaderAdded.newBuilder()
+                                .setName("Content-Type")
+                                .setValue(rule.replacementContentType)
+                        )
+                        .build()
                 )
-                .build()
-            val full = Commands.Command.newBuilder()
-                .setStreamId(streamId)
-                .setPid(pid)
-                .setType(Commands.Command.CommandType.APP_INSPECTION)
-                .setAppInspectionCommand(appInspection)
-                .build()
-            client.execute(full)
+            }
+            rule.addedHeaders.forEach { (key, value) ->
+                if (key.isBlank()) return@forEach
+                add(
+                    NIP.Transformation.newBuilder()
+                        .setHeaderAdded(
+                            NIP.Transformation.HeaderAdded.newBuilder()
+                                .setName(key)
+                                .setValue(value)
+                        )
+                        .build()
+                )
+            }
         }
+        return NIP.InterceptRule.newBuilder()
+            .setEnabled(rule.enabled)
+            .setCriteria(criteriaBuilder.build())
+            .addAllTransformation(transformations)
+            .build()
+    }
+
+    private fun execute(client: TransportClient, pid: Int, streamId: Long, interceptCommand: NIP.InterceptCommand) {
+        val nipCommand = NIP.Command.newBuilder()
+            .setInterceptCommand(interceptCommand)
+            .build()
+        val appInspection = AppInspection.AppInspectionCommand.newBuilder()
+            .setInspectorId(NETWORK_INSPECTOR_ID)
+            .setRawInspectorCommand(
+                AppInspection.RawCommand.newBuilder().setContent(nipCommand.toByteString())
+            )
+            .build()
+        val full = Commands.Command.newBuilder()
+            .setStreamId(streamId)
+            .setPid(pid)
+            .setType(Commands.Command.CommandType.APP_INSPECTION)
+            .setAppInspectionCommand(appInspection)
+            .build()
+        client.execute(full)
     }
 
     private fun parseHost(pattern: String): String {

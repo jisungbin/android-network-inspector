@@ -15,6 +15,7 @@ data class NetworkRow(
     val state: ConnectionState = ConnectionState.IN_FLIGHT,
     val lastUpdatedAtMs: Long = System.currentTimeMillis(),
     val responseAtMs: Long? = null,
+    val mocked: Boolean = false,
 )
 
 enum class TransportProtocol { JAVA_NET, OKHTTP2, OKHTTP3, UNKNOWN }

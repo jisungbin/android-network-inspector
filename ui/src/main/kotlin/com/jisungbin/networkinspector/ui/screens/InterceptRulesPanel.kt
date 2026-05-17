@@ -39,25 +39,33 @@ private val Methods = listOf("ANY", "GET", "POST", "PUT", "DELETE", "PATCH", "HE
 
 @Composable
 fun InterceptRulesPanel(state: UiState, store: AppStore) {
+    var editing by remember { mutableStateOf<InterceptRule?>(null) }
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Mock / Intercept Rules", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.weight(1f))
-            Button(onClick = { store.applyRulesToInspector() }) { Text("Apply to inspector") }
-        }
+        Text("Mock Rules", style = MaterialTheme.typography.titleMedium)
         Text(
-            "URL pattern + method match → status / Content-Type / body / added headers replacement.",
+            "URL pattern + method match → status / Content-Type / body / added headers replacement. " +
+                "Changes sync to the inspector automatically.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline,
         )
         Spacer(Modifier.padding(4.dp))
-        RuleEditor(onSubmit = { rule -> store.upsertRule(rule) })
+        RuleEditor(
+            editing = editing,
+            onSubmit = { rule ->
+                store.upsertRule(rule)
+                editing = null
+            },
+            onCancel = { editing = null },
+        )
         Divider(modifier = Modifier.padding(vertical = 8.dp))
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(state.interceptRules, key = { it.id }) { rule ->
                 RuleRow(
                     rule = rule,
+                    hits = state.ruleHits[rule.id] ?: 0,
+                    isEditing = editing?.id == rule.id,
                     onToggle = { store.upsertRule(rule.copy(enabled = !rule.enabled)) },
+                    onEdit = { editing = rule },
                     onRemove = { store.removeRule(rule.id) },
                 )
             }
@@ -67,16 +75,29 @@ fun InterceptRulesPanel(state: UiState, store: AppStore) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RuleEditor(onSubmit: (InterceptRule) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var pattern by remember { mutableStateOf("") }
-    var method by remember { mutableStateOf("ANY") }
-    var status by remember { mutableStateOf("200") }
-    var contentType by remember { mutableStateOf("application/json") }
-    var body by remember { mutableStateOf("") }
-    var headersText by remember { mutableStateOf("") }
+private fun RuleEditor(
+    editing: InterceptRule?,
+    onSubmit: (InterceptRule) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var name by remember(editing) { mutableStateOf(editing?.name ?: "") }
+    var pattern by remember(editing) { mutableStateOf(editing?.urlPattern ?: "") }
+    var method by remember(editing) { mutableStateOf(editing?.method ?: "ANY") }
+    var status by remember(editing) { mutableStateOf(editing?.replacementStatus?.toString() ?: "200") }
+    var contentType by remember(editing) { mutableStateOf(editing?.replacementContentType ?: "application/json") }
+    var body by remember(editing) { mutableStateOf(editing?.replacementBody ?: "") }
+    var headersText by remember(editing) {
+        mutableStateOf(editing?.addedHeaders?.joinToString("\n") { "${it.first}: ${it.second}" } ?: "")
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (editing != null) {
+            Text(
+                "Editing: ${editing.name}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedTextField(
                 value = name, onValueChange = { name = it },
@@ -114,14 +135,19 @@ private fun RuleEditor(onSubmit: (InterceptRule) -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             maxLines = 5,
         )
-        Row {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Spacer(Modifier.weight(1f))
+            if (editing != null) {
+                TextButton(onClick = onCancel) { Text("Cancel") }
+            }
             Button(
                 onClick = {
                     if (pattern.isBlank()) return@Button
+                    val id = editing?.id ?: UUID.randomUUID().toString()
+                    val enabled = editing?.enabled ?: true
                     onSubmit(
                         InterceptRule(
-                            id = UUID.randomUUID().toString(),
+                            id = id,
                             name = name.ifBlank { pattern },
                             urlPattern = pattern,
                             method = method,
@@ -129,14 +155,17 @@ private fun RuleEditor(onSubmit: (InterceptRule) -> Unit) {
                             replacementContentType = contentType.trim(),
                             replacementBody = body,
                             addedHeaders = parseHeaders(headersText),
-                            enabled = true,
+                            enabled = enabled,
+                            protocolRuleId = editing?.protocolRuleId,
                         )
                     )
-                    name = ""; pattern = ""; method = "ANY"
-                    status = "200"; contentType = "application/json"
-                    body = ""; headersText = ""
+                    if (editing == null) {
+                        name = ""; pattern = ""; method = "ANY"
+                        status = "200"; contentType = "application/json"
+                        body = ""; headersText = ""
+                    }
                 },
-            ) { Text("Add rule") }
+            ) { Text(if (editing == null) "Add rule" else "Save") }
         }
     }
 }
@@ -167,20 +196,39 @@ private fun MethodDropdown(current: String, onSelect: (String) -> Unit) {
 }
 
 @Composable
-private fun RuleRow(rule: InterceptRule, onToggle: () -> Unit, onRemove: () -> Unit) {
+private fun RuleRow(
+    rule: InterceptRule,
+    hits: Int,
+    isEditing: Boolean,
+    onToggle: () -> Unit,
+    onEdit: () -> Unit,
+    onRemove: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(checked = rule.enabled, onCheckedChange = { onToggle() })
         Column(modifier = Modifier.weight(1f)) {
-            Text(rule.name, style = MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(rule.name, style = MaterialTheme.typography.bodyMedium)
+                if (hits > 0) {
+                    Text(
+                        "$hits hit${if (hits == 1) "" else "s"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             Text(
                 "${rule.method}  ${rule.urlPattern} → ${rule.replacementStatus}" +
                     (if (rule.replacementContentType.isNotEmpty()) "  [${rule.replacementContentType}]" else "") +
                     (if (rule.addedHeaders.isNotEmpty()) "  +${rule.addedHeaders.size}hdr" else ""),
                 style = MaterialTheme.typography.bodySmall,
             )
+        }
+        TextButton(onClick = onEdit, enabled = !isEditing) {
+            Text(if (isEditing) "Editing…" else "Edit")
         }
         TextButton(onClick = onRemove) { Text("Remove") }
     }

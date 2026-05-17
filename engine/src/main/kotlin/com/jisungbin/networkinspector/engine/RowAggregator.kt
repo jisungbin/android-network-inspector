@@ -43,6 +43,7 @@ class RowAggregator {
                 endTimestamp = event.timestamp,
                 state = if (h.httpClosed.completed) ConnectionState.COMPLETED else ConnectionState.FAILED,
             )
+            NIP.HttpConnectionEvent.UnionCase.HTTP_RESPONSE_INTERCEPTED -> existing.copy(mocked = true)
             else -> existing
         }
         val stamped = next.copy(lastUpdatedAtMs = System.currentTimeMillis())

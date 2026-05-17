@@ -2,10 +2,15 @@ package com.jisungbin.networkinspector.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -19,6 +24,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.jisungbin.networkinspector.log.DiskLogger
+import com.jisungbin.networkinspector.ui.util.LocalSnackbarHostState
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
@@ -83,6 +89,38 @@ fun main() = application {
                     shortcut = KeyShortcut(Key.W, shift = true, meta = true),
                     onClick = { store.detach() },
                 )
+                Separator()
+                Item(
+                    text = "Import rules...",
+                    onClick = {
+                        val dialog = FileDialog(null as Frame?, "Import mock rules", FileDialog.LOAD)
+                        dialog.file = "*.json"
+                        dialog.isVisible = true
+                        val dir = dialog.directory
+                        val name = dialog.file
+                        if (dir != null && name != null) {
+                            store.importRulesFromFile(File(dir, name))
+                        }
+                    },
+                )
+                Item(
+                    text = "Export rules...",
+                    enabled = ui.interceptRules.isNotEmpty(),
+                    onClick = {
+                        val ts = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+                            .withZone(ZoneId.systemDefault())
+                            .format(Instant.now())
+                        val dialog = FileDialog(null as Frame?, "Export mock rules", FileDialog.SAVE)
+                        dialog.file = "mock-rules-$ts.json"
+                        dialog.isVisible = true
+                        val dir = dialog.directory
+                        val name = dialog.file
+                        if (dir != null && name != null) {
+                            runCatching { store.exportRulesToFile(File(dir, name)) }
+                                .onFailure { DiskLogger.logError("rules export failed", it) }
+                        }
+                    },
+                )
             }
             Menu("View", mnemonic = 'V') {
                 CheckboxItem(
@@ -123,8 +161,16 @@ fun main() = application {
         }
         val scheme = if (dark) darkColorScheme() else lightColorScheme()
         MaterialTheme(colorScheme = scheme) {
-            Surface(modifier = Modifier.fillMaxSize()) {
-                AppRoot(store = store)
+            val snackbarHostState = remember { SnackbarHostState() }
+            CompositionLocalProvider(LocalSnackbarHostState provides snackbarHostState) {
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                ) { padding ->
+                    Surface(modifier = Modifier.fillMaxSize().padding(padding)) {
+                        AppRoot(store = store)
+                    }
+                }
             }
         }
     }
