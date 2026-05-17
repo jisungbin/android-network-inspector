@@ -1,5 +1,7 @@
 package com.jisungbin.networkinspector.ui.util
 
+import androidx.compose.foundation.ContextMenuArea
+import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,15 +11,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -25,12 +31,22 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+
+@OptIn(ExperimentalSerializationApi::class)
+private val PrettyJson = Json { prettyPrint = true; prettyPrintIndent = "  " }
+private val CompactJson = Json { }
+
+val LocalSnackbarHostState = staticCompositionLocalOf<SnackbarHostState> {
+    error("LocalSnackbarHostState not provided")
+}
 
 private val KeyColor = Color(0xFF1565C0)
 private val StringColor = Color(0xFF2E7D32)
@@ -129,41 +145,50 @@ private fun JsonObjectView(
 ) {
     var expanded by remember(obj) { mutableStateOf(indent < defaultExpandedDepth) }
     val pad = "  ".repeat(indent)
+    val menuEnabled = indent != 0
 
     if (obj.isEmpty()) {
-        MatchAwareText(counter, currentMatchIndex, requester) {
-            append(pad)
-            pushBracket("{}")
-            if (trailingComma) append(",")
+        JsonNodeContextMenu(obj, menuEnabled) {
+            MatchAwareText(counter, currentMatchIndex, requester) {
+                append(pad)
+                pushBracket("{}")
+                if (trailingComma) append(",")
+            }
         }
         return
     }
 
     val toggleModifier = Modifier.clickable { expanded = !expanded }
     if (!expanded) {
-        MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
-            append(pad)
-            pushBracket("▸ { … ")
-            withStyle(SpanStyle(color = NullColor)) { append("${obj.size} keys") }
-            pushBracket(" }")
-            if (trailingComma) append(",")
+        JsonNodeContextMenu(obj, menuEnabled) {
+            MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+                append(pad)
+                pushBracket("▸ { … ")
+                withStyle(SpanStyle(color = NullColor)) { append("${obj.size} keys") }
+                pushBracket(" }")
+                if (trailingComma) append(",")
+            }
         }
         return
     }
 
-    MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
-        append(pad)
-        pushBracket("▾ {")
+    JsonNodeContextMenu(obj, menuEnabled) {
+        MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+            append(pad)
+            pushBracket("▾ {")
+        }
     }
     val entries = obj.entries.toList()
     entries.forEachIndexed { i, (key, value) ->
         val last = i == entries.lastIndex
         JsonKeyedValue(key, value, indent + 1, !last, search, defaultExpandedDepth, counter, currentMatchIndex, requester)
     }
-    MatchAwareText(counter, currentMatchIndex, requester) {
-        append(pad)
-        pushBracket("}")
-        if (trailingComma) append(",")
+    JsonNodeContextMenu(obj, menuEnabled) {
+        MatchAwareText(counter, currentMatchIndex, requester) {
+            append(pad)
+            pushBracket("}")
+            if (trailingComma) append(",")
+        }
     }
 }
 
@@ -181,40 +206,49 @@ private fun JsonArrayView(
 ) {
     var expanded by remember(arr) { mutableStateOf(indent < defaultExpandedDepth) }
     val pad = "  ".repeat(indent)
+    val menuEnabled = indent != 0
 
     if (arr.isEmpty()) {
-        MatchAwareText(counter, currentMatchIndex, requester) {
-            append(pad)
-            pushBracket("[]")
-            if (trailingComma) append(",")
+        JsonNodeContextMenu(arr, menuEnabled) {
+            MatchAwareText(counter, currentMatchIndex, requester) {
+                append(pad)
+                pushBracket("[]")
+                if (trailingComma) append(",")
+            }
         }
         return
     }
 
     val toggleModifier = Modifier.clickable { expanded = !expanded }
     if (!expanded) {
-        MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
-            append(pad)
-            pushBracket("▸ [ … ")
-            withStyle(SpanStyle(color = NullColor)) { append("${arr.size} items") }
-            pushBracket(" ]")
-            if (trailingComma) append(",")
+        JsonNodeContextMenu(arr, menuEnabled) {
+            MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+                append(pad)
+                pushBracket("▸ [ … ")
+                withStyle(SpanStyle(color = NullColor)) { append("${arr.size} items") }
+                pushBracket(" ]")
+                if (trailingComma) append(",")
+            }
         }
         return
     }
 
-    MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
-        append(pad)
-        pushBracket("▾ [")
+    JsonNodeContextMenu(arr, menuEnabled) {
+        MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+            append(pad)
+            pushBracket("▾ [")
+        }
     }
     arr.forEachIndexed { i, value ->
         val last = i == arr.lastIndex
         JsonNode(value, indent + 1, !last, search, defaultExpandedDepth, counter, currentMatchIndex, requester)
     }
-    MatchAwareText(counter, currentMatchIndex, requester) {
-        append(pad)
-        pushBracket("]")
-        if (trailingComma) append(",")
+    JsonNodeContextMenu(arr, menuEnabled) {
+        MatchAwareText(counter, currentMatchIndex, requester) {
+            append(pad)
+            pushBracket("]")
+            if (trailingComma) append(",")
+        }
     }
 }
 
@@ -245,27 +279,31 @@ private fun JsonKeyedValue(
             val unit = if (isObj) "keys" else "items"
 
             if (empty || !expanded) {
-                MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
-                    append(pad)
-                    appendKey(key, search, counter, currentMatchIndex)
-                    append(": ")
-                    if (empty) {
-                        pushBracket("$open$close")
-                    } else {
-                        pushBracket("▸ $open … ")
-                        withStyle(SpanStyle(color = NullColor)) { append("$size $unit") }
-                        pushBracket(" $close")
+                JsonNodeContextMenu(value, enabled = true) {
+                    MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+                        append(pad)
+                        appendKey(key, search, counter, currentMatchIndex)
+                        append(": ")
+                        if (empty) {
+                            pushBracket("$open$close")
+                        } else {
+                            pushBracket("▸ $open … ")
+                            withStyle(SpanStyle(color = NullColor)) { append("$size $unit") }
+                            pushBracket(" $close")
+                        }
+                        if (trailingComma) append(",")
                     }
-                    if (trailingComma) append(",")
                 }
                 return
             }
 
-            MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
-                append(pad)
-                appendKey(key, search, counter, currentMatchIndex)
-                append(": ")
-                pushBracket("▾ $open")
+            JsonNodeContextMenu(value, enabled = true) {
+                MatchAwareText(counter, currentMatchIndex, requester, toggleModifier) {
+                    append(pad)
+                    appendKey(key, search, counter, currentMatchIndex)
+                    append(": ")
+                    pushBracket("▾ $open")
+                }
             }
             when (value) {
                 is JsonObject -> {
@@ -281,10 +319,12 @@ private fun JsonKeyedValue(
                 }
                 else -> Unit
             }
-            MatchAwareText(counter, currentMatchIndex, requester) {
-                append(pad)
-                pushBracket(close)
-                if (trailingComma) append(",")
+            JsonNodeContextMenu(value, enabled = true) {
+                MatchAwareText(counter, currentMatchIndex, requester) {
+                    append(pad)
+                    pushBracket(close)
+                    if (trailingComma) append(",")
+                }
             }
         }
         else -> {
@@ -317,6 +357,46 @@ private fun JsonPrimitiveView(
         appendPrimitive(value, search, counter, currentMatchIndex)
         if (trailingComma) append(",")
     }
+}
+
+@Composable
+private fun JsonNodeContextMenu(
+    element: JsonElement,
+    enabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    if (!enabled) {
+        content()
+        return
+    }
+    val clipboard = LocalClipboardManager.current
+    val snackbar = LocalSnackbarHostState.current
+    val scope = rememberCoroutineScope()
+    val (prettyLabel, compactLabel) = when (element) {
+        is JsonArray -> "Copy this array" to "Copy as compact JSON"
+        else -> "Copy this object" to "Copy as compact JSON"
+    }
+    ContextMenuArea(
+        items = {
+            listOf(
+                ContextMenuItem(prettyLabel) {
+                    val text = PrettyJson.encodeToString(JsonElement.serializer(), element)
+                    scope.launch {
+                        clipboard.setText(AnnotatedString(text))
+                        snackbar.showSnackbar("Copied JSON to clipboard")
+                    }
+                },
+                ContextMenuItem(compactLabel) {
+                    val text = CompactJson.encodeToString(JsonElement.serializer(), element)
+                    scope.launch {
+                        clipboard.setText(AnnotatedString(text))
+                        snackbar.showSnackbar("Copied JSON to clipboard")
+                    }
+                },
+            )
+        },
+        content = content,
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
