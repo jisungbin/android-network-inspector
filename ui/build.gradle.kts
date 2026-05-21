@@ -1,3 +1,4 @@
+import kotlinx.benchmark.gradle.JvmBenchmarkTarget
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -5,10 +6,47 @@ plugins {
     alias(libs.plugins.compose)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.kotlin.allopen)
+    alias(libs.plugins.kotlinx.benchmark)
 }
 
 kotlin {
     jvmToolchain(21)
+}
+
+allOpen {
+    annotation("org.openjdk.jmh.annotations.State")
+}
+
+sourceSets {
+    create("benchmarks") {
+        compileClasspath += sourceSets["main"].output
+        runtimeClasspath += sourceSets["main"].output
+    }
+}
+
+val benchmarksImplementation: Configuration by configurations.getting {
+    extendsFrom(configurations["implementation"])
+}
+configurations["benchmarksRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
+
+benchmark {
+    configurations {
+        named("main") {
+            warmups = 3
+            iterations = 5
+            iterationTime = 2
+            iterationTimeUnit = "s"
+            mode = "AverageTime"
+            outputTimeUnit = "ms"
+        }
+    }
+    targets {
+        register("benchmarks") {
+            this as JvmBenchmarkTarget
+            jmhVersion = "1.37"
+        }
+    }
 }
 
 dependencies {
@@ -21,6 +59,9 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
     runtimeOnly(libs.logback.classic)
+
+    benchmarksImplementation(libs.kotlinx.benchmark.runtime)
+    benchmarksImplementation(libs.kotlinx.serialization.json)
 }
 
 compose.desktop {
