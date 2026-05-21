@@ -2,6 +2,7 @@ package com.jisungbin.networkinspector.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -45,8 +47,9 @@ import androidx.compose.ui.unit.dp
 import com.jisungbin.networkinspector.engine.NetworkRow
 import com.jisungbin.networkinspector.ui.util.DecodedBody
 import com.jisungbin.networkinspector.ui.util.JsonViewer
-import com.jisungbin.networkinspector.ui.util.countJsonMatches
+import com.jisungbin.networkinspector.ui.util.JsonViewerState
 import com.jisungbin.networkinspector.ui.util.decodeBody
+import com.jisungbin.networkinspector.ui.util.rememberJsonViewerState
 import com.jisungbin.networkinspector.ui.util.toCurl
 
 @Composable
@@ -59,11 +62,11 @@ fun RequestDetail(row: NetworkRow) {
     val headers = if (tab == 0) row.requestHeaders else row.responseHeaders
     val body = if (tab == 0) row.requestBody else row.responseBody
     val decoded = remember(body, headers, showFull) { decodeBody(body, headers, showFull = showFull) }
-    val totalMatches = remember(decoded?.text, search) {
-        if (decoded?.isJson == true && search.isNotBlank())
-            countJsonMatches(decoded.text, search)
-        else 0
-    }
+    val jsonState = rememberJsonViewerState(
+        json = if (decoded?.isJson == true) decoded.text else "",
+        defaultExpandedDepth = 2,
+    )
+    val totalMatches = if (decoded?.isJson == true && search.isNotBlank()) jsonState.totalMatches else 0
     var currentMatchIndex by remember(body, search) { mutableIntStateOf(0) }
     LaunchedEffect(totalMatches) {
         if (totalMatches == 0) currentMatchIndex = 0
@@ -128,8 +131,7 @@ fun RequestDetail(row: NetworkRow) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             HeaderBlock(
@@ -140,7 +142,6 @@ fun RequestDetail(row: NetworkRow) {
             )
             BodyBlock(
                 title = if (tab == 0) "Request Body" else "Response Body",
-                body = body,
                 decoded = decoded,
                 search = search,
                 showFull = showFull,
@@ -148,6 +149,8 @@ fun RequestDetail(row: NetworkRow) {
                 clipboard = clipboard,
                 currentMatchIndex = currentMatchIndex,
                 totalMatches = totalMatches,
+                jsonState = jsonState,
+                modifier = Modifier.weight(1f),
             )
         }
     }
@@ -173,24 +176,29 @@ private fun HeaderBlock(
         if (headers.isEmpty()) {
             Text("(empty)", style = MaterialTheme.typography.bodySmall)
         } else {
-            headers.forEach { (k, vs) ->
-                val line = "$k: ${vs.joinToString(", ")}"
-                if (!matches(line, search)) return@forEach
-                Text(
-                    text = highlightOccurrences(line, search),
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 240.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                headers.forEach { (k, vs) ->
+                    val line = "$k: ${vs.joinToString(", ")}"
+                    if (!matches(line, search)) return@forEach
+                    Text(
+                        text = highlightOccurrences(line, search),
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun BodyBlock(
+private fun ColumnScope.BodyBlock(
     title: String,
-    body: ByteArray?,
     decoded: DecodedBody?,
     search: String,
     showFull: Boolean,
@@ -198,22 +206,16 @@ private fun BodyBlock(
     clipboard: ClipboardManager,
     currentMatchIndex: Int,
     totalMatches: Int,
+    jsonState: JsonViewerState,
+    modifier: Modifier = Modifier,
 ) {
-    var depthOverride by remember(body) { mutableIntStateOf(2) }
-    var generation by remember(body) { mutableIntStateOf(0) }
-    Column {
+    Column(modifier = modifier) {
         Row {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.weight(1f))
             if (decoded?.isJson == true) {
-                TextButton(onClick = {
-                    depthOverride = Int.MAX_VALUE
-                    generation++
-                }) { Text("Expand all") }
-                TextButton(onClick = {
-                    depthOverride = 0
-                    generation++
-                }) { Text("Collapse all") }
+                TextButton(onClick = { jsonState.expandAll() }) { Text("Expand all") }
+                TextButton(onClick = { jsonState.collapseAll() }) { Text("Collapse all") }
             }
             if (decoded != null && !decoded.isBinary) {
                 TextButton(onClick = {
@@ -243,17 +245,17 @@ private fun BodyBlock(
             }
         }
         Spacer(Modifier.height(4.dp))
-        SelectionContainer {
-            if (decoded.isJson) {
-                androidx.compose.runtime.key(generation) {
-                    JsonViewer(
-                        json = decoded.text,
-                        search = search,
-                        currentMatchIndex = if (totalMatches > 0) currentMatchIndex.coerceIn(0, totalMatches - 1) else -1,
-                        defaultExpandedDepth = depthOverride,
-                    )
-                }
-            } else {
+        if (decoded.isJson) {
+            SelectionContainer(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                JsonViewer(
+                    state = jsonState,
+                    search = search,
+                    currentMatchIndex = if (totalMatches > 0) currentMatchIndex.coerceIn(0, totalMatches - 1) else -1,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        } else {
+            SelectionContainer(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 Text(
                     text = highlightOccurrences(decoded.text, search),
                     fontFamily = FontFamily.Monospace,
