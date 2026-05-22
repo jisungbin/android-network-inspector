@@ -43,7 +43,6 @@ import kotlinx.serialization.json.JsonPrimitive
 
 @OptIn(ExperimentalSerializationApi::class)
 private val PrettyJson = Json { prettyPrint = true; prettyPrintIndent = "  " }
-private val CompactJson = Json { }
 
 val LocalSnackbarHostState = staticCompositionLocalOf<SnackbarHostState> {
     error("LocalSnackbarHostState not provided")
@@ -409,7 +408,7 @@ private fun JsonLineContextMenu(element: JsonElement, content: @Composable () ->
                     }
                 },
                 ContextMenuItem(compactLabel) {
-                    val text = CompactJson.encodeToString(JsonElement.serializer(), element)
+                    val text = Json.encodeToString(JsonElement.serializer(), element)
                     scope.launch {
                         clipboard.setText(AnnotatedString(text))
                         snackbar.showSnackbar("Copied JSON to clipboard")

@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
@@ -98,7 +98,7 @@ fun RequestDetail(row: NetworkRow) {
             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Request") })
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Response") })
         }
-        Divider()
+        HorizontalDivider()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
