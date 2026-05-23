@@ -1,7 +1,7 @@
 [versions]
 kotlin = "2.1.0"
 coroutines = "1.10.1"
-ddmlib = "31.7.0"
+ddmlib = "31.13.2"
 protobuf = "4.28.3"
 slf4j = "2.0.16"
 logback = "1.5.12"
