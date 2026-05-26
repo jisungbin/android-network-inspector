@@ -2,7 +2,6 @@ package com.jisungbin.networkinspector.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -14,14 +13,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -52,9 +52,11 @@ import com.jisungbin.networkinspector.ui.util.decodeBody
 import com.jisungbin.networkinspector.ui.util.rememberJsonViewerState
 import com.jisungbin.networkinspector.ui.util.toCurl
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RequestDetail(row: NetworkRow) {
-    var tab by remember(row.connectionId) { mutableStateOf(0) }
+    var tab by remember(row.connectionId) { mutableStateOf(1) }
+    var subTab by remember(row.connectionId) { mutableStateOf(1) }
     var search by remember(row.connectionId) { mutableStateOf("") }
     var showFull by remember(row.connectionId) { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
@@ -99,6 +101,28 @@ fun RequestDetail(row: NetworkRow) {
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Response") })
         }
         HorizontalDivider()
+        SecondaryTabRow(
+            selectedTabIndex = subTab,
+            modifier = Modifier.height(32.dp),
+        ) {
+            Tab(
+                selected = subTab == 0,
+                onClick = { subTab = 0 },
+                modifier = Modifier.height(32.dp),
+                text = {
+                    Text("Headers", style = MaterialTheme.typography.labelMedium)
+                },
+            )
+            Tab(
+                selected = subTab == 1,
+                onClick = { subTab = 1 },
+                modifier = Modifier.height(32.dp),
+                text = {
+                    Text("Body", style = MaterialTheme.typography.labelMedium)
+                },
+            )
+        }
+        HorizontalDivider()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -108,11 +132,13 @@ fun RequestDetail(row: NetworkRow) {
             OutlinedTextField(
                 value = search,
                 onValueChange = { search = it },
-                placeholder = { Text("search within body / headers") },
+                placeholder = {
+                    Text(if (subTab == 0) "search within headers" else "search within body")
+                },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
             )
-            if (decoded?.isJson == true && search.isNotBlank()) {
+            if (subTab == 1 && decoded?.isJson == true && search.isNotBlank()) {
                 JsonSearchNav(
                     currentMatchIndex = currentMatchIndex,
                     totalMatches = totalMatches,
@@ -128,30 +154,33 @@ fun RequestDetail(row: NetworkRow) {
                 )
             }
         }
-        Column(
+        Box(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .weight(1f)
                 .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            HeaderBlock(
-                title = if (tab == 0) "Request Headers" else "Response Headers",
-                headers = headers,
-                search = search,
-                clipboard = clipboard,
-            )
-            BodyBlock(
-                title = if (tab == 0) "Request Body" else "Response Body",
-                decoded = decoded,
-                search = search,
-                showFull = showFull,
-                onLoadFull = { showFull = true },
-                clipboard = clipboard,
-                currentMatchIndex = currentMatchIndex,
-                totalMatches = totalMatches,
-                jsonState = jsonState,
-                modifier = Modifier.weight(1f),
-            )
+            when (subTab) {
+                0 -> HeaderBlock(
+                    title = if (tab == 0) "Request Headers" else "Response Headers",
+                    headers = headers,
+                    search = search,
+                    clipboard = clipboard,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                else -> BodyBlock(
+                    title = if (tab == 0) "Request Body" else "Response Body",
+                    decoded = decoded,
+                    search = search,
+                    showFull = showFull,
+                    onLoadFull = { showFull = true },
+                    clipboard = clipboard,
+                    currentMatchIndex = currentMatchIndex,
+                    totalMatches = totalMatches,
+                    jsonState = jsonState,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
@@ -162,8 +191,9 @@ private fun HeaderBlock(
     headers: List<Pair<String, List<String>>>,
     search: String,
     clipboard: ClipboardManager,
+    modifier: Modifier = Modifier,
 ) {
-    Column {
+    Column(modifier = modifier) {
         Row {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.weight(1f))
@@ -178,7 +208,7 @@ private fun HeaderBlock(
         } else {
             Column(
                 modifier = Modifier
-                    .heightIn(max = 240.dp)
+                    .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
             ) {
                 headers.forEach { (k, vs) ->
@@ -197,7 +227,7 @@ private fun HeaderBlock(
 }
 
 @Composable
-private fun ColumnScope.BodyBlock(
+private fun BodyBlock(
     title: String,
     decoded: DecodedBody?,
     search: String,
