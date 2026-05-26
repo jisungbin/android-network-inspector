@@ -74,6 +74,7 @@ import com.jisungbin.networkinspector.ui.SortKey
 import com.jisungbin.networkinspector.ui.StatusFilter
 import com.jisungbin.networkinspector.ui.UiState
 import com.jisungbin.networkinspector.ui.util.applyFilters
+import com.jisungbin.networkinspector.ui.util.hostOf
 import com.jisungbin.networkinspector.ui.util.toCurl
 import kotlinx.coroutines.delay
 
@@ -100,8 +101,8 @@ private const val HIGHLIGHT_MS = 1100L
 @Composable
 fun InspectorScreen(state: UiState, store: AppStore) {
     val streaming = state.attach as? AttachState.Streaming
-    val filtered = remember(state.rows, state.search, state.statusFilter, state.methodFilter) {
-        state.rows.applyFilters(state.search, state.statusFilter, state.methodFilter)
+    val filtered = remember(state.rows, state.search, state.statusFilter, state.methodFilter, state.ignoredHosts) {
+        state.rows.applyFilters(state.search, state.statusFilter, state.methodFilter, state.ignoredHosts)
     }
     val sorted = remember(filtered, state.sortKey, state.sortDescending) {
         filtered.sortedWith(rowComparator(state.sortKey, state.sortDescending))
@@ -125,6 +126,7 @@ fun InspectorScreen(state: UiState, store: AppStore) {
                     onClickHeader = { store.toggleSort(it) },
                     onClickRow = { store.selectRow(it) },
                     onFilterHost = { store.updateSearch(it) },
+                    onIgnoreHost = { store.ignoreHostOf(it) },
                 )
             }
             SplitterHandle(
@@ -187,6 +189,7 @@ private fun RequestTable(
     onClickHeader: (SortKey) -> Unit,
     onClickRow: (Long) -> Unit,
     onFilterHost: (String) -> Unit,
+    onIgnoreHost: (String) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
@@ -219,6 +222,9 @@ private fun RequestTable(
                             ContextMenuItem("Filter to host") {
                                 onFilterHost(hostOf(row.url))
                             },
+                            ContextMenuItem("Ignore this host") {
+                                onIgnoreHost(row.url)
+                            },
                         )
                     },
                 ) {
@@ -233,9 +239,6 @@ private fun RequestTable(
         }
     }
 }
-
-private fun hostOf(url: String): String =
-    url.removePrefix("https://").removePrefix("http://").substringBefore("/").substringBefore("?")
 
 @Composable
 private fun HeaderRow(

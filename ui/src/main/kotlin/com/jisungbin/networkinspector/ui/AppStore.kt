@@ -13,9 +13,11 @@ import com.jisungbin.networkinspector.engine.AttachSession
 import com.jisungbin.networkinspector.engine.AttachStage
 import com.jisungbin.networkinspector.adb.pidOf
 import com.jisungbin.networkinspector.engine.RowAggregator
+import com.jisungbin.networkinspector.ui.util.IgnoredHostsStorage
 import com.jisungbin.networkinspector.ui.util.RulesStorage
 import com.jisungbin.networkinspector.ui.util.SessionExporter
 import com.jisungbin.networkinspector.ui.util.applyFilters
+import com.jisungbin.networkinspector.ui.util.hostOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,8 +45,9 @@ class AppStore {
 
     init {
         val saved = RulesStorage.load()
-        if (saved.isNotEmpty()) {
-            _state.update { it.copy(interceptRules = saved) }
+        val savedIgnored = IgnoredHostsStorage.load()
+        if (saved.isNotEmpty() || savedIgnored.isNotEmpty()) {
+            _state.update { it.copy(interceptRules = saved, ignoredHosts = savedIgnored) }
         }
         scope.launch { refreshDevices() }
     }
@@ -126,6 +129,26 @@ class AppStore {
     fun updateMethodFilter(m: String?) = _state.update { it.copy(methodFilter = m) }
     fun selectRow(id: Long?) = _state.update { it.copy(selectedRowId = id) }
 
+    fun addIgnoredHost(host: String) {
+        val normalized = host.trim().removePrefix("https://").removePrefix("http://")
+            .substringBefore("/").substringBefore("?").lowercase()
+        if (normalized.isEmpty()) return
+        _state.update { state ->
+            if (state.ignoredHosts.any { it.equals(normalized, ignoreCase = true) }) state
+            else state.copy(ignoredHosts = state.ignoredHosts + normalized)
+        }
+        IgnoredHostsStorage.save(_state.value.ignoredHosts)
+    }
+
+    fun removeIgnoredHost(host: String) {
+        _state.update { state ->
+            state.copy(ignoredHosts = state.ignoredHosts.filterNot { it.equals(host, ignoreCase = true) })
+        }
+        IgnoredHostsStorage.save(_state.value.ignoredHosts)
+    }
+
+    fun ignoreHostOf(url: String) = addIgnoredHost(hostOf(url))
+
     fun setDestination(d: Destination) = _state.update { it.copy(destination = d) }
     fun setTheme(t: ThemePreference) = _state.update { it.copy(theme = t) }
 
@@ -148,7 +171,7 @@ class AppStore {
 
     fun exportSessionJson(): String {
         val s = _state.value
-        val filtered = s.rows.applyFilters(s.search, s.statusFilter, s.methodFilter)
+        val filtered = s.rows.applyFilters(s.search, s.statusFilter, s.methodFilter, s.ignoredHosts)
         return SessionExporter.export(filtered, s)
     }
 

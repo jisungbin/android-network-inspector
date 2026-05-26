@@ -35,6 +35,7 @@ data class UiState(
     val methodFilter: String? = null,
     val interceptRules: List<InterceptRule> = emptyList(),
     val ruleHits: Map<String, Int> = emptyMap(),
+    val ignoredHosts: List<String> = emptyList(),
     val sortKey: SortKey = SortKey.RECEIVED,
     val sortDescending: Boolean = false,
     val paused: Boolean = false,

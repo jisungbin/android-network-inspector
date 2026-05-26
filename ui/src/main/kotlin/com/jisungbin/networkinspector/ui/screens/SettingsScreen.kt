@@ -12,12 +12,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -74,6 +81,69 @@ fun SettingsScreen(state: UiState, store: AppStore) {
                 color = MaterialTheme.colorScheme.outline,
             )
         }
+
+        Section("Ignored hosts") {
+            Text(
+                "Requests targeting these hosts (and their subdomains) are hidden from the " +
+                    "inspector. Data is still captured — toggling here updates the view instantly.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
+            IgnoredHostInput(onAdd = { store.addIgnoredHost(it) })
+            if (state.ignoredHosts.isEmpty()) {
+                Text(
+                    "No hosts ignored yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    fontFamily = FontFamily.Monospace,
+                )
+            } else {
+                state.ignoredHosts.forEach { host ->
+                    IgnoredHostRow(host = host, onRemove = { store.removeIgnoredHost(host) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IgnoredHostInput(onAdd: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    val submit = {
+        if (text.isNotBlank()) {
+            onAdd(text)
+            text = ""
+        }
+    }
+    androidx.compose.foundation.layout.Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            placeholder = { Text("e.g. analytics.example.com") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        OutlinedButton(onClick = { submit() }, enabled = text.isNotBlank()) { Text("Add") }
+    }
+}
+
+@Composable
+private fun IgnoredHostRow(host: String, onRemove: () -> Unit) {
+    androidx.compose.foundation.layout.Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            host,
+            fontFamily = FontFamily.Monospace,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onRemove) { Text("Remove") }
     }
 }
 
