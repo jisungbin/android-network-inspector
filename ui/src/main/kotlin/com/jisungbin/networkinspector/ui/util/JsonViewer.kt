@@ -158,14 +158,9 @@ fun JsonViewer(
             flattenJson(parsed, state.expandedOverrides, state.defaultExpandedDepth, state.nodeIds)
         }
     }
-    val lines by remember(state) {
-        derivedStateOf { annotateMatches(skeleton, search) }
-    }
-    val totalLineMatches by remember(state) {
-        derivedStateOf {
-            val last = lines.lastOrNull() ?: return@derivedStateOf 0
-            last.matchOffset + last.matchCount
-        }
+    val lines = remember(skeleton, search) { annotateMatches(skeleton, search) }
+    val totalLineMatches = remember(lines) {
+        lines.lastOrNull()?.let { it.matchOffset + it.matchCount } ?: 0
     }
 
     LaunchedEffect(totalLineMatches) {
