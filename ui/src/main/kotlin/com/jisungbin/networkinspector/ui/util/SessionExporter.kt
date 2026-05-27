@@ -1,6 +1,7 @@
 package com.jisungbin.networkinspector.ui.util
 
 import com.jisungbin.networkinspector.engine.NetworkRow
+import com.jisungbin.networkinspector.ui.DeviceSession
 import com.jisungbin.networkinspector.ui.UiState
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -19,12 +20,12 @@ import java.time.format.DateTimeFormatter
 import java.util.Base64
 
 object SessionExporter {
-    fun export(rows: List<NetworkRow>, state: UiState): String {
+    fun export(rows: List<NetworkRow>, session: DeviceSession, state: UiState): String {
         val ordered = rows.sortedBy { it.startTimestamp }
         val root = buildJsonObject {
             put("exportedAt", DateTimeFormatter.ISO_INSTANT.format(Instant.now()))
-            put("device", state.deviceSerial ?: "")
-            put("package", state.packageName)
+            put("device", session.serial)
+            put("package", session.packageName)
             putJsonObject("filterContext") {
                 put("search", state.search)
                 put("statusFilter", state.statusFilter.name)

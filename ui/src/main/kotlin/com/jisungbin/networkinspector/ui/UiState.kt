@@ -4,7 +4,6 @@ import com.jisungbin.networkinspector.adb.DeviceSnapshot
 import com.jisungbin.networkinspector.engine.AttachMode
 import com.jisungbin.networkinspector.engine.NetworkRow
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 
 enum class Destination { DEVICES, INSPECTOR, RULES, SETTINGS }
 enum class ThemePreference(val label: String) {
@@ -13,34 +12,67 @@ enum class ThemePreference(val label: String) {
     DARK("Dark"),
 }
 
+/**
+ * Per-device inspection state. One entry per device the user has selected or attached to.
+ * Holds only immutable UI state — runtime resources (AttachSession, stream Job, RowAggregator)
+ * live in [AppStore.runtimes], keyed by the same serial.
+ */
+data class DeviceSession(
+    val serial: String,
+    val model: String? = null,
+    // attach form input
+    val packages: List<String> = emptyList(),
+    val packagesLoading: Boolean = false,
+    val packageName: String = "",
+    val activity: String = "",
+    val activityResolving: Boolean = false,
+    val attachMode: AttachMode = AttachMode.ColdStart,
+    val runningPid: Int? = null,
+    // attach / streaming state
+    val attach: AttachState = AttachState.Idle,
+    val inspectorReadyAt: Long? = null,
+    val firstEventAt: Long? = null,
+    // captured data, scoped to this device
+    val rows: List<NetworkRow> = emptyList(),
+    val selectedRowId: Long? = null,
+    val ruleHits: Map<String, Int> = emptyMap(),
+    val paused: Boolean = false,
+)
+
 data class UiState(
     val destination: Destination = Destination.DEVICES,
     val theme: ThemePreference = ThemePreference.SYSTEM,
     val devices: List<DeviceSnapshot> = emptyList(),
-    val deviceSerial: String? = null,
-    val packages: List<String> = emptyList(),
-    val packagesLoading: Boolean = false,
-    val packageName: String = "",
-    val activity: String = "com.gangnam.sister.debug/gnsister.app.main.MainActivity",
-    val activityResolving: Boolean = false,
-    val attachMode: AttachMode = AttachMode.ColdStart,
-    val runningPid: Int? = null,
-    val attach: AttachState = AttachState.Idle,
-    val inspectorReadyAt: Long? = null,
-    val firstEventAt: Long? = null,
-    val rows: List<NetworkRow> = emptyList(),
-    val selectedRowId: Long? = null,
+    // multi-device
+    val sessions: Map<String, DeviceSession> = emptyMap(),
+    val selectedSerial: String? = null,   // active INSPECTOR tab
+    val composingSerial: String? = null,  // device whose attach form is being edited on DEVICES
+    // global filters (shared across all devices)
     val search: String = "",
     val statusFilter: StatusFilter = StatusFilter.All,
     val methodFilter: String? = null,
-    val interceptRules: List<InterceptRule> = emptyList(),
-    val ruleHits: Map<String, Int> = emptyMap(),
-    val ignoredHosts: List<String> = emptyList(),
     val sortKey: SortKey = SortKey.RECEIVED,
     val sortDescending: Boolean = false,
-    val paused: Boolean = false,
     val autoScroll: Boolean = true,
+    // global rule definitions / settings
+    val interceptRules: List<InterceptRule> = emptyList(),
+    val ignoredHosts: List<String> = emptyList(),
 )
+
+val UiState.selectedSession: DeviceSession?
+    get() = selectedSerial?.let { sessions[it] }
+
+val UiState.composingSession: DeviceSession?
+    get() = composingSerial?.let { sessions[it] }
+
+val UiState.anyStreaming: Boolean
+    get() = sessions.values.any { it.attach is AttachState.Streaming }
+
+/** Devices with an active tab: anything past Idle (Connecting / Streaming / Failed). */
+val UiState.inspectingSessions: List<DeviceSession>
+    get() = sessions.values
+        .filter { it.attach !is AttachState.Idle }
+        .sortedBy { it.serial }
 
 enum class SortKey { METHOD, STATUS, URL, RECEIVED, DURATION, SIZE, PROTO, START_TIME }
 
@@ -72,6 +104,4 @@ data class InterceptRule(
     val replacementBody: String,
     val addedHeaders: List<Pair<String, String>> = emptyList(),
     val enabled: Boolean,
-    @Transient
-    val protocolRuleId: Int? = null,
 )

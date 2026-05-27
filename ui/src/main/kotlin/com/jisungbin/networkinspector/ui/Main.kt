@@ -41,31 +41,31 @@ fun main() = application {
     ) {
         val store = remember { AppStore() }
         val ui by store.state.collectAsState()
-        val streaming = ui.attach is AttachState.Streaming
+        val streaming = ui.anyStreaming
 
         MenuBar {
             Menu("Session", mnemonic = 'S') {
                 Item(
-                    text = if (ui.paused) "Resume" else "Pause",
-                    enabled = streaming,
+                    text = if (ui.selectedSession?.paused == true) "Resume" else "Pause",
+                    enabled = ui.selectedSession?.attach is AttachState.Streaming,
                     shortcut = KeyShortcut(Key.Period, meta = true),
-                    onClick = { store.setPaused(!ui.paused) },
+                    onClick = { store.setPaused(!(ui.selectedSession?.paused ?: false)) },
                 )
                 Item(
                     text = "Clear",
-                    enabled = streaming,
+                    enabled = ui.selectedSession?.attach is AttachState.Streaming,
                     shortcut = KeyShortcut(Key.K, meta = true),
                     onClick = { store.clearRows() },
                 )
                 Item(
                     text = "Export to JSON...",
-                    enabled = ui.rows.isNotEmpty(),
+                    enabled = ui.selectedSession?.rows?.isNotEmpty() == true,
                     shortcut = KeyShortcut(Key.E, meta = true),
                     onClick = {
                         val ts = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
                             .withZone(ZoneId.systemDefault())
                             .format(Instant.now())
-                        val slug = ui.packageName.takeIf { it.isNotBlank() } ?: "session"
+                        val slug = ui.selectedSession?.packageName?.takeIf { it.isNotBlank() } ?: "session"
                         val dialog = FileDialog(null as Frame?, "Save network sessions", FileDialog.SAVE)
                         dialog.file = "$slug-$ts.json"
                         dialog.isVisible = true
@@ -85,9 +85,14 @@ fun main() = application {
                 )
                 Item(
                     text = "Detach",
-                    enabled = streaming,
+                    enabled = ui.selectedSession?.attach is AttachState.Streaming,
                     shortcut = KeyShortcut(Key.W, shift = true, meta = true),
                     onClick = { store.detach() },
+                )
+                Item(
+                    text = "Detach all",
+                    enabled = streaming,
+                    onClick = { store.detachAll() },
                 )
                 Separator()
                 Item(

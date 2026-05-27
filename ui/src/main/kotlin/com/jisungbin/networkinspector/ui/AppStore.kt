@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 class AppStore {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -38,10 +39,21 @@ class AppStore {
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     private var bridge: AndroidDebugBridge? = null
-    private var session: AttachSession? = null
-    private var streamJob: Job? = null
-    private val aggregator = RowAggregator()
-    private var nextProtocolRuleId = 1
+
+    /**
+     * Per-device runtime resources, keyed by serial. Mirrors [UiState.sessions] but holds the
+     * mutable/non-serializable bits: the live attach session, its stream job, the row aggregator,
+     * and the device-local mapping from [InterceptRule.id] to the stream-scoped protocol rule id.
+     */
+    private class Runtime(
+        val session: AttachSession,
+        var streamJob: Job? = null,
+        val aggregator: RowAggregator = RowAggregator(),
+        var nextProtocolRuleId: Int = 1,
+        val ruleIdMap: MutableMap<String, Int> = mutableMapOf(),
+    )
+
+    private val runtimes = ConcurrentHashMap<String, Runtime>()
 
     init {
         val saved = RulesStorage.load()
@@ -52,36 +64,45 @@ class AppStore {
         scope.launch { refreshDevices() }
     }
 
+    private inline fun updateSession(serial: String, block: (DeviceSession) -> DeviceSession) {
+        _state.update { ui ->
+            val cur = ui.sessions[serial] ?: DeviceSession(serial)
+            ui.copy(sessions = ui.sessions + (serial to block(cur)))
+        }
+    }
+
     fun refreshDevices() {
         scope.launch {
             withContext(Dispatchers.IO) {
                 val b = bridge ?: AdbBridge.start(AdbBridge.resolveAdb()).also { bridge = it }
                 val devices = b.devices.toList().map { it.snapshot() }
-                _state.update {
-                    it.copy(
-                        devices = devices,
-                        deviceSerial = it.deviceSerial ?: devices.firstOrNull()?.serial,
-                    )
+                _state.update { ui ->
+                    val serial = ui.composingSerial ?: devices.firstOrNull()?.serial
+                    val sessions = if (serial != null && serial !in ui.sessions) {
+                        val model = devices.firstOrNull { it.serial == serial }?.model
+                        ui.sessions + (serial to DeviceSession(serial, model = model))
+                    } else ui.sessions
+                    ui.copy(devices = devices, composingSerial = serial, sessions = sessions)
                 }
-                _state.value.deviceSerial?.let { loadPackagesFor(it) }
+                _state.value.composingSerial?.let { loadPackagesFor(it) }
             }
         }
     }
 
-    fun updateDevice(serial: String?) {
-        _state.update {
-            it.copy(
-                deviceSerial = serial,
-                packages = emptyList(),
-                packageName = "",
-                activity = "",
-            )
+    /** Selects which device's attach form is being edited on the DEVICES screen. */
+    fun selectComposingDevice(serial: String?) {
+        _state.update { ui ->
+            val sessions = if (serial != null && serial !in ui.sessions) {
+                val model = ui.devices.firstOrNull { it.serial == serial }?.model
+                ui.sessions + (serial to DeviceSession(serial, model = model))
+            } else ui.sessions
+            ui.copy(composingSerial = serial, sessions = sessions)
         }
         if (serial != null) scope.launch(Dispatchers.IO) { loadPackagesFor(serial) }
     }
 
-    fun updatePackage(name: String) {
-        _state.update {
+    fun updatePackage(serial: String, name: String) {
+        updateSession(serial) {
             it.copy(
                 packageName = name,
                 activity = "",
@@ -90,12 +111,11 @@ class AppStore {
             )
         }
         if (name.isBlank()) return
-        val serial = _state.value.deviceSerial ?: return
         scope.launch(Dispatchers.IO) {
             val device = bridge?.devices?.toList()?.firstOrNull { it.serialNumber == serial }
             val pid = device?.pidOf(name)
             val activity = if (pid == null) device?.resolveLauncherActivity(name) else null
-            _state.update {
+            updateSession(serial) {
                 it.copy(
                     runningPid = pid,
                     activity = activity ?: "",
@@ -106,28 +126,39 @@ class AppStore {
         }
     }
 
-    fun updateActivity(activity: String) =
-        _state.update { it.copy(activity = activity, activityResolving = false) }
+    fun updateActivity(serial: String, activity: String) =
+        updateSession(serial) { it.copy(activity = activity, activityResolving = false) }
 
-    fun updateMode(mode: AttachMode) = _state.update { it.copy(attachMode = mode) }
+    fun updateMode(serial: String, mode: AttachMode) =
+        updateSession(serial) { it.copy(attachMode = mode) }
 
     private fun loadPackagesFor(serial: String) {
-        _state.update { it.copy(packagesLoading = true) }
+        updateSession(serial) { it.copy(packagesLoading = true) }
         val device = bridge?.devices?.toList()?.firstOrNull { it.serialNumber == serial }
         if (device == null) {
-            _state.update { it.copy(packagesLoading = false) }
+            updateSession(serial) { it.copy(packagesLoading = false) }
             return
         }
         val pkgs = runCatching { device.listThirdPartyPackages() }.getOrDefault(emptyList())
         val foreground = runCatching { device.foregroundPackage() }.getOrNull()
             ?.takeIf { it in pkgs }
-        _state.update { it.copy(packages = pkgs, packagesLoading = false) }
-        if (foreground != null && _state.value.packageName.isBlank()) updatePackage(foreground)
+        updateSession(serial) { it.copy(packages = pkgs, packagesLoading = false) }
+        if (foreground != null && _state.value.sessions[serial]?.packageName.isNullOrBlank()) {
+            updatePackage(serial, foreground)
+        }
     }
+
     fun updateSearch(q: String) = _state.update { it.copy(search = q) }
     fun updateStatusFilter(f: StatusFilter) = _state.update { it.copy(statusFilter = f) }
     fun updateMethodFilter(m: String?) = _state.update { it.copy(methodFilter = m) }
-    fun selectRow(id: Long?) = _state.update { it.copy(selectedRowId = id) }
+
+    fun selectRow(id: Long?) {
+        val serial = _state.value.selectedSerial ?: return
+        updateSession(serial) { it.copy(selectedRowId = id) }
+    }
+
+    /** Switches the active INSPECTOR tab. */
+    fun selectTab(serial: String) = _state.update { it.copy(selectedSerial = serial) }
 
     fun addIgnoredHost(host: String) {
         val normalized = host.trim().removePrefix("https://").removePrefix("http://")
@@ -157,82 +188,100 @@ class AppStore {
         else it.copy(sortKey = key, sortDescending = false)
     }
 
-    fun setPaused(value: Boolean) = _state.update {
-        if (!value) it.copy(paused = false, rows = aggregator.snapshot)
-        else it.copy(paused = true)
+    fun setPaused(value: Boolean) {
+        val serial = _state.value.selectedSerial ?: return
+        val rt = runtimes[serial]
+        updateSession(serial) {
+            if (!value) it.copy(paused = false, rows = rt?.aggregator?.snapshot ?: it.rows)
+            else it.copy(paused = true)
+        }
     }
 
     fun toggleAutoScroll() = _state.update { it.copy(autoScroll = !it.autoScroll) }
 
     fun clearRows() {
-        aggregator.reset()
-        _state.update { it.copy(rows = emptyList(), selectedRowId = null, firstEventAt = null) }
+        val serial = _state.value.selectedSerial ?: return
+        runtimes[serial]?.aggregator?.reset()
+        updateSession(serial) { it.copy(rows = emptyList(), selectedRowId = null, firstEventAt = null) }
     }
 
     fun exportSessionJson(): String {
-        val s = _state.value
-        val filtered = s.rows.applyFilters(s.search, s.statusFilter, s.methodFilter, s.ignoredHosts)
-        return SessionExporter.export(filtered, s)
+        val ui = _state.value
+        val sess = ui.selectedSession ?: return "{}"
+        val filtered = sess.rows.applyFilters(ui.search, ui.statusFilter, ui.methodFilter, ui.ignoredHosts)
+        return SessionExporter.export(filtered, sess, ui)
     }
 
-    fun attach() {
-        val s = _state.value
-        val serial = s.deviceSerial ?: return error("device unselected")
-        if (s.packageName.isBlank()) return error("package empty")
-        if (s.attachMode == AttachMode.ColdStart && s.activity.isBlank()) {
-            return error("activity required for cold start")
+    fun attach(serial: String) {
+        val sess = _state.value.sessions[serial] ?: return
+        if (sess.packageName.isBlank()) return
+        if (sess.attachMode == AttachMode.ColdStart && sess.activity.isBlank()) return
+        // Already attaching or streaming on this device — ignore duplicate attach.
+        if (runtimes.containsKey(serial)) return
+        if (sess.attach is AttachState.Connecting || sess.attach is AttachState.Streaming) return
+
+        val packageName = sess.packageName
+        val attachMode = sess.attachMode
+        val activityArg = sess.activity.takeIf { attachMode == AttachMode.ColdStart }
+        val model = _state.value.devices.firstOrNull { it.serial == serial }?.model
+
+        updateSession(serial) {
+            it.copy(model = model ?: it.model, attach = AttachState.Connecting(AttachPhase.Deploying))
         }
-        _state.update { it.copy(attach = AttachState.Connecting(AttachPhase.Deploying)) }
         scope.launch {
             var session: AttachSession? = null
             try {
                 val orchestrator = withContext(Dispatchers.IO) {
                     val device = bridge!!.devices.toList().findBySerial(serial)
-                    AttachOrchestrator(device, s.packageName, resolveStudioBundleDir())
+                    AttachOrchestrator(device, packageName, resolveStudioBundleDir())
                 }
-                val activityArg = s.activity.takeIf { s.attachMode == AttachMode.ColdStart }
                 val opened = withContext(Dispatchers.IO) {
-                    orchestrator.attach(s.attachMode, activityArg) { stage ->
-                        _state.update { it.copy(attach = AttachState.Connecting(stage.toPhase())) }
+                    orchestrator.attach(attachMode, activityArg) { stage ->
+                        updateSession(serial) { it.copy(attach = AttachState.Connecting(stage.toPhase())) }
                     }
                 }
                 session = opened
-                this@AppStore.session = opened
-                val rulesWithFreshIds = _state.value.interceptRules.map { r ->
-                    r.copy(protocolRuleId = nextProtocolRuleId++)
+                val rt = Runtime(session = opened)
+                runtimes[serial] = rt
+                // Map the current global rules onto this device's stream-scoped protocol ids.
+                val toSend = _state.value.interceptRules.map { r ->
+                    val pid = rt.nextProtocolRuleId++
+                    rt.ruleIdMap[r.id] = pid
+                    pid to r
                 }
+                updateSession(serial) { it.copy(attach = AttachState.Streaming(opened.pid, opened.hostPort)) }
                 _state.update {
                     it.copy(
-                        attach = AttachState.Streaming(opened.pid, opened.hostPort),
                         destination = Destination.INSPECTOR,
-                        interceptRules = rulesWithFreshIds,
+                        selectedSerial = it.selectedSerial ?: serial,
                     )
                 }
                 scope.launch(Dispatchers.IO) {
-                    rulesWithFreshIds.forEach { r ->
+                    toSend.forEach { (pid, r) ->
                         com.jisungbin.networkinspector.protocol.RuleSender.sendAdd(
                             opened.client, opened.pid, opened.streamId,
-                            r.protocolRuleId!!, r.toHostRule(),
+                            pid, r.toHostRule(),
                         )
                     }
                 }
-                streamJob = scope.launch(Dispatchers.IO) {
+                rt.streamJob = scope.launch(Dispatchers.IO) {
                     opened.networkEvents().collect { event ->
-                        val updated = aggregator.consume(event) ?: return@collect
-                        if (_state.value.firstEventAt == null) {
-                            _state.update { it.copy(firstEventAt = System.currentTimeMillis()) }
+                        val updated = rt.aggregator.consume(event) ?: return@collect
+                        val cur = _state.value.sessions[serial] ?: return@collect
+                        if (cur.firstEventAt == null) {
+                            updateSession(serial) { it.copy(firstEventAt = System.currentTimeMillis()) }
                         }
-                        if (_state.value.paused) return@collect
-                        _state.update { ui ->
-                            val previousMocked = ui.rows.firstOrNull { it.connectionId == updated.connectionId }?.mocked ?: false
+                        if (_state.value.sessions[serial]?.paused == true) return@collect
+                        updateSession(serial) { s ->
+                            val previousMocked = s.rows.firstOrNull { it.connectionId == updated.connectionId }?.mocked ?: false
                             val justMocked = updated.mocked && !previousMocked
                             val newHits = if (justMocked) {
-                                val matching = ui.interceptRules.firstOrNull { matchesRow(updated, it) }
+                                val matching = _state.value.interceptRules.firstOrNull { matchesRow(updated, it) }
                                 if (matching != null) {
-                                    ui.ruleHits + (matching.id to ((ui.ruleHits[matching.id] ?: 0) + 1))
-                                } else ui.ruleHits
-                            } else ui.ruleHits
-                            ui.copy(rows = ui.rows.replaceOrAppend(updated), ruleHits = newHits)
+                                    s.ruleHits + (matching.id to ((s.ruleHits[matching.id] ?: 0) + 1))
+                                } else s.ruleHits
+                            } else s.ruleHits
+                            s.copy(rows = s.rows.replaceOrAppend(updated), ruleHits = newHits)
                         }
                     }
                 }
@@ -242,8 +291,9 @@ class AppStore {
                             .filter { it.kind == com.android.tools.profiler.proto.Common.Event.Kind.APP_INSPECTION_RESPONSE }
                             .firstOrNull()
                     }
-                    if (_state.value.attach is AttachState.Streaming && _state.value.inspectorReadyAt == null) {
-                        _state.update { it.copy(inspectorReadyAt = System.currentTimeMillis()) }
+                    val cur = _state.value.sessions[serial]
+                    if (cur?.attach is AttachState.Streaming && cur.inspectorReadyAt == null) {
+                        updateSession(serial) { it.copy(inspectorReadyAt = System.currentTimeMillis()) }
                         com.jisungbin.networkinspector.log.DiskLogger.log(
                             if (received != null) "inspector ready (response received)"
                             else "inspector assumed ready (5s timeout)"
@@ -276,57 +326,79 @@ class AppStore {
                     append(com.jisungbin.networkinspector.log.DiskLogger.file.absolutePath)
                     append(")")
                 }
-                _state.update { it.copy(attach = AttachState.Failed(msg)) }
+                updateSession(serial) { it.copy(attach = AttachState.Failed(msg)) }
                 runCatching { session?.close() }
-                this@AppStore.session = null
+                runtimes.remove(serial)
             }
         }
     }
 
-    fun detach() {
+    /** Detaches a single device tab, freeing its runtime but keeping the attach form input. */
+    fun detach(serial: String) {
         scope.launch {
-            streamJob?.cancel()
-            streamJob = null
-            withContext(Dispatchers.IO) { session?.close() }
-            session = null
-            nextProtocolRuleId = 1
-            _state.update {
-                it.copy(
-                    attach = AttachState.Idle,
-                    rows = emptyList(),
-                    selectedRowId = null,
-                    destination = Destination.DEVICES,
-                    inspectorReadyAt = null,
-                    firstEventAt = null,
-                    interceptRules = it.interceptRules.map { r -> r.copy(protocolRuleId = null) },
-                    ruleHits = emptyMap(),
+            val rt = runtimes.remove(serial)
+            rt?.streamJob?.cancel()
+            withContext(Dispatchers.IO) { rt?.session?.close() }
+            _state.update { ui ->
+                val sess = ui.sessions[serial]
+                val updatedSessions = if (sess != null) {
+                    ui.sessions + (serial to sess.copy(
+                        attach = AttachState.Idle,
+                        rows = emptyList(),
+                        selectedRowId = null,
+                        inspectorReadyAt = null,
+                        firstEventAt = null,
+                        ruleHits = emptyMap(),
+                        paused = false,
+                    ))
+                } else ui.sessions
+                val stillInspecting = updatedSessions.values.filter { it.attach !is AttachState.Idle }
+                val newSelected = if (ui.selectedSerial == serial) {
+                    stillInspecting.firstOrNull { it.attach is AttachState.Streaming }?.serial
+                        ?: stillInspecting.firstOrNull()?.serial
+                } else ui.selectedSerial
+                ui.copy(
+                    sessions = updatedSessions,
+                    selectedSerial = newSelected,
+                    destination = if (updatedSessions.values.none { it.attach is AttachState.Streaming })
+                        Destination.DEVICES else ui.destination,
                 )
             }
         }
     }
 
+    /** Detaches the currently selected tab. */
+    fun detach() {
+        _state.value.selectedSerial?.let { detach(it) }
+    }
+
+    fun detachAll() {
+        runtimes.keys.toList().forEach { detach(it) }
+    }
+
     fun upsertRule(rule: InterceptRule) {
-        val s = session
-        val previous = _state.value.interceptRules.firstOrNull { it.id == rule.id }
-        val protocolId = previous?.protocolRuleId ?: if (s != null) nextProtocolRuleId++ else null
-        val finalRule = rule.copy(protocolRuleId = protocolId)
         _state.update { state ->
             val idx = state.interceptRules.indexOfFirst { it.id == rule.id }
-            val next = if (idx < 0) state.interceptRules + finalRule
-            else state.interceptRules.toMutableList().apply { this[idx] = finalRule }
+            val next = if (idx < 0) state.interceptRules + rule
+            else state.interceptRules.toMutableList().apply { this[idx] = rule }
             state.copy(interceptRules = next)
         }
-        if (s != null && protocolId != null) {
-            val isNew = previous?.protocolRuleId == null
-            scope.launch(Dispatchers.IO) {
-                val hostRule = finalRule.toHostRule()
-                if (isNew) {
+        // Fan out to every attached device, each with its own protocol rule id.
+        runtimes.forEach { (_, rt) ->
+            val s = rt.session
+            val existingPid = rt.ruleIdMap[rule.id]
+            if (existingPid == null) {
+                val pid = rt.nextProtocolRuleId++
+                rt.ruleIdMap[rule.id] = pid
+                scope.launch(Dispatchers.IO) {
                     com.jisungbin.networkinspector.protocol.RuleSender.sendAdd(
-                        s.client, s.pid, s.streamId, protocolId, hostRule,
+                        s.client, s.pid, s.streamId, pid, rule.toHostRule(),
                     )
-                } else {
+                }
+            } else {
+                scope.launch(Dispatchers.IO) {
                     com.jisungbin.networkinspector.protocol.RuleSender.sendUpdate(
-                        s.client, s.pid, s.streamId, protocolId, hostRule,
+                        s.client, s.pid, s.streamId, existingPid, rule.toHostRule(),
                     )
                 }
             }
@@ -335,16 +407,18 @@ class AppStore {
     }
 
     fun removeRule(id: String) {
-        val s = session
-        val removed = _state.value.interceptRules.firstOrNull { it.id == id }
         _state.update { state ->
             state.copy(interceptRules = state.interceptRules.filterNot { it.id == id })
         }
-        if (s != null && removed?.protocolRuleId != null) {
-            scope.launch(Dispatchers.IO) {
-                com.jisungbin.networkinspector.protocol.RuleSender.sendRemove(
-                    s.client, s.pid, s.streamId, removed.protocolRuleId,
-                )
+        runtimes.forEach { (_, rt) ->
+            val pid = rt.ruleIdMap.remove(id)
+            if (pid != null) {
+                val s = rt.session
+                scope.launch(Dispatchers.IO) {
+                    com.jisungbin.networkinspector.protocol.RuleSender.sendRemove(
+                        s.client, s.pid, s.streamId, pid,
+                    )
+                }
             }
         }
         persistRules()
@@ -368,14 +442,24 @@ class AppStore {
 
     fun importRulesFromFile(file: File) {
         val imported = runCatching { RulesStorage.importFrom(file) }.getOrNull() ?: return
-        val s = session
-        val withIds = imported.map { it.copy(protocolRuleId = if (s != null) nextProtocolRuleId++ else null) }
-        _state.update { it.copy(interceptRules = withIds) }
-        if (s != null) {
+        _state.update { it.copy(interceptRules = imported) }
+        // Re-sync every attached device: drop old mappings, push the imported set fresh.
+        runtimes.forEach { (_, rt) ->
+            val s = rt.session
+            val oldIds = rt.ruleIdMap.values.toList()
+            rt.ruleIdMap.clear()
+            val toAdd = imported.map { r ->
+                val pid = rt.nextProtocolRuleId++
+                rt.ruleIdMap[r.id] = pid
+                pid to r
+            }
             scope.launch(Dispatchers.IO) {
-                withIds.forEach { r ->
+                oldIds.forEach {
+                    com.jisungbin.networkinspector.protocol.RuleSender.sendRemove(s.client, s.pid, s.streamId, it)
+                }
+                toAdd.forEach { (pid, r) ->
                     com.jisungbin.networkinspector.protocol.RuleSender.sendAdd(
-                        s.client, s.pid, s.streamId, r.protocolRuleId!!, r.toHostRule(),
+                        s.client, s.pid, s.streamId, pid, r.toHostRule(),
                     )
                 }
             }

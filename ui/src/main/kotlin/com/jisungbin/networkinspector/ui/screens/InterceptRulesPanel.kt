@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.jisungbin.networkinspector.ui.AppStore
 import com.jisungbin.networkinspector.ui.InterceptRule
 import com.jisungbin.networkinspector.ui.UiState
+import com.jisungbin.networkinspector.ui.selectedSession
 import java.util.UUID
 
 private val Methods = listOf("ANY", "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS")
@@ -62,7 +63,7 @@ fun InterceptRulesPanel(state: UiState, store: AppStore) {
             items(state.interceptRules, key = { it.id }) { rule ->
                 RuleRow(
                     rule = rule,
-                    hits = state.ruleHits[rule.id] ?: 0,
+                    hits = state.selectedSession?.ruleHits?.get(rule.id) ?: 0,
                     isEditing = editing?.id == rule.id,
                     onToggle = { store.upsertRule(rule.copy(enabled = !rule.enabled)) },
                     onEdit = { editing = rule },
@@ -156,7 +157,6 @@ private fun RuleEditor(
                             replacementBody = body,
                             addedHeaders = parseHeaders(headersText),
                             enabled = enabled,
-                            protocolRuleId = editing?.protocolRuleId,
                         )
                     )
                     if (editing == null) {

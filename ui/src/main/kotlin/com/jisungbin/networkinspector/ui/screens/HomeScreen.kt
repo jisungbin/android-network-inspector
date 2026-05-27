@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -37,11 +38,16 @@ import com.jisungbin.networkinspector.engine.AttachMode
 import com.jisungbin.networkinspector.ui.AppStore
 import com.jisungbin.networkinspector.ui.AttachPhase
 import com.jisungbin.networkinspector.ui.AttachState
+import com.jisungbin.networkinspector.ui.Destination
 import com.jisungbin.networkinspector.ui.UiState
+import com.jisungbin.networkinspector.ui.composingSession
+import com.jisungbin.networkinspector.ui.inspectingSessions
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(state: UiState, store: AppStore) {
+    val composing = state.composingSession
+    val serial = state.composingSerial
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -58,39 +64,42 @@ fun HomeScreen(state: UiState, store: AppStore) {
         ModeChooser(state = state, store = store)
 
         OutlinedTextField(
-            value = state.activity,
-            onValueChange = { store.updateActivity(it) },
+            value = composing?.activity ?: "",
+            onValueChange = { if (serial != null) store.updateActivity(serial, it) },
             label = { Text("Activity") },
             placeholder = { Text("auto-resolved on package select; edit if needed") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            enabled = state.attachMode == AttachMode.ColdStart,
+            enabled = composing?.attachMode == AttachMode.ColdStart,
             trailingIcon = {
-                if (state.activityResolving) {
+                if (composing?.activityResolving == true) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 }
             },
         )
 
         Button(
-            onClick = { store.attach() },
-            enabled = state.deviceSerial != null
-                && state.packageName.isNotBlank()
-                && (state.attachMode == AttachMode.AttachRunning || state.activity.isNotBlank())
-                && state.attach !is AttachState.Connecting,
+            onClick = { if (serial != null) store.attach(serial) },
+            enabled = serial != null
+                && composing != null
+                && composing.packageName.isNotBlank()
+                && (composing.attachMode == AttachMode.AttachRunning || composing.activity.isNotBlank())
+                && composing.attach !is AttachState.Connecting
+                && composing.attach !is AttachState.Streaming,
         ) {
             Text(
-                when (state.attach) {
+                when (composing?.attach) {
                     is AttachState.Connecting -> "Connecting…"
-                    else -> when (state.attachMode) {
-                        AttachMode.ColdStart -> "Cold start + attach"
-                        AttachMode.AttachRunning -> "Attach to PID ${state.runningPid}"
+                    is AttachState.Streaming -> "Attached"
+                    else -> when (composing?.attachMode) {
+                        AttachMode.AttachRunning -> "Attach to PID ${composing?.runningPid}"
+                        else -> "Cold start + attach"
                     }
                 }
             )
         }
 
-        when (val s = state.attach) {
+        when (val s = composing?.attach) {
             is AttachState.Connecting -> AttachStepper(s.phase)
             is AttachState.Failed -> SelectionContainer {
                 androidx.compose.foundation.layout.Column(
@@ -109,6 +118,39 @@ fun HomeScreen(state: UiState, store: AppStore) {
             }
             else -> Unit
         }
+
+        AttachedDevicesList(state = state, store = store)
+    }
+}
+
+@Composable
+private fun AttachedDevicesList(state: UiState, store: AppStore) {
+    val sessions = state.inspectingSessions
+    if (sessions.isEmpty()) return
+    Divider(modifier = Modifier.padding(vertical = 4.dp))
+    Text("Attached devices", style = MaterialTheme.typography.titleSmall)
+    sessions.forEach { s ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                "${attachBadge(s.attach)} ${s.model ?: s.serial}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                s.packageName.ifBlank { "—" },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = {
+                store.selectTab(s.serial)
+                store.setDestination(Destination.INSPECTOR)
+            }) { Text("Open") }
+            TextButton(onClick = { store.detach(s.serial) }) { Text("Detach") }
+        }
     }
 }
 
@@ -116,7 +158,7 @@ fun HomeScreen(state: UiState, store: AppStore) {
 @Composable
 private fun DeviceDropdown(state: UiState, store: AppStore, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
-    val selected = state.devices.firstOrNull { it.serial == state.deviceSerial }
+    val selected = state.devices.firstOrNull { it.serial == state.composingSerial }
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = it },
@@ -135,7 +177,7 @@ private fun DeviceDropdown(state: UiState, store: AppStore, modifier: Modifier =
                 DropdownMenuItem(
                     text = { Text("${d.serial}  ${d.model.orEmpty()}  ${d.abi.orEmpty()}") },
                     onClick = {
-                        store.updateDevice(d.serial)
+                        store.selectComposingDevice(d.serial)
                         expanded = false
                     },
                 )
@@ -147,22 +189,26 @@ private fun DeviceDropdown(state: UiState, store: AppStore, modifier: Modifier =
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PackageDropdown(state: UiState, store: AppStore) {
+    val composing = state.composingSession
+    val serial = state.composingSerial
     var expanded by remember { mutableStateOf(false) }
-    val filtered = remember(state.packages, state.packageName) {
-        val q = state.packageName.trim()
-        val list = if (q.isBlank()) state.packages
-        else state.packages.filter { it.contains(q, ignoreCase = true) }
+    val packages = composing?.packages ?: emptyList()
+    val packageName = composing?.packageName ?: ""
+    val filtered = remember(packages, packageName) {
+        val q = packageName.trim()
+        val list = if (q.isBlank()) packages
+        else packages.filter { it.contains(q, ignoreCase = true) }
         list.take(200)
     }
-    val runningHint = state.runningPid?.let { " (running pid=$it)" }.orEmpty()
+    val runningHint = composing?.runningPid?.let { " (running pid=$it)" }.orEmpty()
     ExposedDropdownMenuBox(
         expanded = expanded && filtered.isNotEmpty(),
         onExpandedChange = { expanded = it },
     ) {
         OutlinedTextField(
-            value = state.packageName,
+            value = packageName,
             onValueChange = {
-                store.updatePackage(it)
+                if (serial != null) store.updatePackage(serial, it)
                 expanded = true
             },
             label = { Text("Package$runningHint") },
@@ -170,7 +216,7 @@ private fun PackageDropdown(state: UiState, store: AppStore) {
             singleLine = true,
             modifier = Modifier.menuAnchor().fillMaxWidth(),
             trailingIcon = {
-                if (state.packagesLoading) {
+                if (composing?.packagesLoading == true) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 } else {
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
@@ -185,7 +231,7 @@ private fun PackageDropdown(state: UiState, store: AppStore) {
                 DropdownMenuItem(
                     text = { Text(pkg) },
                     onClick = {
-                        store.updatePackage(pkg)
+                        if (serial != null) store.updatePackage(serial, pkg)
                         expanded = false
                     },
                 )
@@ -223,6 +269,8 @@ private fun AttachStepper(current: AttachPhase) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ModeChooser(state: UiState, store: AppStore) {
+    val composing = state.composingSession
+    val serial = state.composingSerial
     val modes = listOf(AttachMode.ColdStart, AttachMode.AttachRunning)
     val labels = mapOf(
         AttachMode.ColdStart to "Cold start",
@@ -231,10 +279,10 @@ private fun ModeChooser(state: UiState, store: AppStore) {
     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
         modes.forEachIndexed { index, m ->
             SegmentedButton(
-                selected = state.attachMode == m,
-                onClick = { store.updateMode(m) },
+                selected = composing?.attachMode == m,
+                onClick = { if (serial != null) store.updateMode(serial, m) },
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
-                enabled = m != AttachMode.AttachRunning || state.runningPid != null,
+                enabled = m != AttachMode.AttachRunning || composing?.runningPid != null,
             ) {
                 Text(labels[m] ?: m.name)
             }

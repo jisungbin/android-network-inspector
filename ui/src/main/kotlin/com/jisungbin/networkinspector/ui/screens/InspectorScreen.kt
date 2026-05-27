@@ -69,7 +69,7 @@ import java.awt.Cursor
 import com.jisungbin.networkinspector.engine.ConnectionState
 import com.jisungbin.networkinspector.engine.NetworkRow
 import com.jisungbin.networkinspector.ui.AppStore
-import com.jisungbin.networkinspector.ui.AttachState
+import com.jisungbin.networkinspector.ui.DeviceSession
 import com.jisungbin.networkinspector.ui.SortKey
 import com.jisungbin.networkinspector.ui.StatusFilter
 import com.jisungbin.networkinspector.ui.UiState
@@ -99,15 +99,14 @@ private const val HIGHLIGHT_MS = 1100L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InspectorScreen(state: UiState, store: AppStore) {
-    val streaming = state.attach as? AttachState.Streaming
-    val filtered = remember(state.rows, state.search, state.statusFilter, state.methodFilter, state.ignoredHosts) {
-        state.rows.applyFilters(state.search, state.statusFilter, state.methodFilter, state.ignoredHosts)
+fun InspectorScreen(session: DeviceSession, state: UiState, store: AppStore) {
+    val filtered = remember(session.rows, state.search, state.statusFilter, state.methodFilter, state.ignoredHosts) {
+        session.rows.applyFilters(state.search, state.statusFilter, state.methodFilter, state.ignoredHosts)
     }
     val sorted = remember(filtered, state.sortKey, state.sortDescending) {
         filtered.sortedWith(rowComparator(state.sortKey, state.sortDescending))
     }
-    val selected = sorted.firstOrNull { it.connectionId == state.selectedRowId }
+    val selected = sorted.firstOrNull { it.connectionId == session.selectedRowId }
     val columnWidths = remember {
         mutableStateMapOf<SortKey, Dp>().apply { Columns.forEach { this[it.key] = it.initialWidth } }
     }
@@ -122,6 +121,7 @@ fun InspectorScreen(state: UiState, store: AppStore) {
                 RequestTable(
                     rows = sorted,
                     state = state,
+                    session = session,
                     columnWidths = columnWidths,
                     onClickHeader = { store.toggleSort(it) },
                     onClickRow = { store.selectRow(it) },
@@ -185,6 +185,7 @@ private fun FilterBar(state: UiState, store: AppStore) {
 private fun RequestTable(
     rows: List<NetworkRow>,
     state: UiState,
+    session: DeviceSession,
     columnWidths: androidx.compose.runtime.snapshots.SnapshotStateMap<SortKey, Dp>,
     onClickHeader: (SortKey) -> Unit,
     onClickRow: (Long) -> Unit,
@@ -193,8 +194,8 @@ private fun RequestTable(
 ) {
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
-    LaunchedEffect(rows.size, state.autoScroll, state.paused) {
-        if (state.autoScroll && !state.paused && rows.isNotEmpty()) {
+    LaunchedEffect(rows.size, state.autoScroll, session.paused) {
+        if (state.autoScroll && !session.paused && rows.isNotEmpty()) {
             listState.animateScrollToItem(rows.size - 1)
         }
     }
@@ -230,7 +231,7 @@ private fun RequestTable(
                 ) {
                     DataRow(
                         row = row,
-                        selected = row.connectionId == state.selectedRowId,
+                        selected = row.connectionId == session.selectedRowId,
                         widths = columnWidths,
                         onClick = { onClickRow(row.connectionId) },
                     )

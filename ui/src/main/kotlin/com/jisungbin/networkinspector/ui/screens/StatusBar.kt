@@ -14,14 +14,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.jisungbin.networkinspector.engine.ConnectionState
 import com.jisungbin.networkinspector.ui.AttachState
+import com.jisungbin.networkinspector.ui.DeviceSession
 import com.jisungbin.networkinspector.ui.UiState
 
 @Composable
-fun StatusBar(state: UiState) {
-    val streaming = state.attach as? AttachState.Streaming
-    val totalBytes = state.rows.sumOf { (it.requestBody?.size ?: 0) + (it.responseBody?.size ?: 0) }
-    val inFlight = state.rows.count { it.state == ConnectionState.IN_FLIGHT }
-    val failed = state.rows.count { it.state == ConnectionState.FAILED }
+fun StatusBar(state: UiState, session: DeviceSession?) {
+    val streaming = session?.attach as? AttachState.Streaming
+    val rows = session?.rows ?: emptyList()
+    val totalBytes = rows.sumOf { (it.requestBody?.size ?: 0) + (it.responseBody?.size ?: 0) }
+    val inFlight = rows.count { it.state == ConnectionState.IN_FLIGHT }
+    val failed = rows.count { it.state == ConnectionState.FAILED }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -34,24 +36,24 @@ fun StatusBar(state: UiState) {
             if (streaming != null) {
                 val tail = "pid=${streaming.pid} port=${streaming.hostPort}"
                 when {
-                    state.inspectorReadyAt == null -> "● setup $tail"
-                    state.firstEventAt == null -> "● listening (waiting for traffic) $tail"
+                    session?.inspectorReadyAt == null -> "● setup $tail"
+                    session.firstEventAt == null -> "● listening (waiting for traffic) $tail"
                     else -> "● capturing $tail"
                 }
             }
-            else when (state.attach) {
+            else when (session?.attach) {
                 is AttachState.Connecting -> "○ connecting"
                 is AttachState.Failed -> "○ failed"
                 else -> "○ idle"
             }
         )
-        Cell("rows ${state.rows.size}")
+        Cell("rows ${rows.size}")
         Cell("in-flight $inFlight")
         if (failed > 0) Cell("failed $failed")
         Cell("total ${sizeText(totalBytes)}")
-        if (state.paused) Cell("paused")
+        if (session?.paused == true) Cell("paused")
         androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-        Cell(state.packageName.ifBlank { "—" })
+        Cell(session?.packageName?.ifBlank { "—" } ?: "—")
     }
 }
 
