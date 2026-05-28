@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,9 +49,11 @@ import com.jisungbin.networkinspector.engine.NetworkRow
 import com.jisungbin.networkinspector.ui.util.DecodedBody
 import com.jisungbin.networkinspector.ui.util.JsonViewer
 import com.jisungbin.networkinspector.ui.util.JsonViewerState
+import com.jisungbin.networkinspector.ui.util.buildJsonViewerState
 import com.jisungbin.networkinspector.ui.util.decodeBody
-import com.jisungbin.networkinspector.ui.util.rememberJsonViewerState
 import com.jisungbin.networkinspector.ui.util.toCurl
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,12 +66,28 @@ fun RequestDetail(row: NetworkRow) {
 
     val headers = if (tab == 0) row.requestHeaders else row.responseHeaders
     val body = if (tab == 0) row.requestBody else row.responseBody
-    val decoded = remember(body, headers, showFull) { decodeBody(body, headers, showFull = showFull) }
-    val jsonState = rememberJsonViewerState(
-        json = if (decoded?.isJson == true) decoded.text else "",
-        defaultExpandedDepth = 2,
-    )
-    val totalMatches = if (decoded?.isJson == true && search.isNotBlank()) jsonState.totalMatches else 0
+
+    // 디코딩(gzip 해제 + 바이너리 판별 + JSON 파싱)과 JsonViewer 트리 빌드를 Default 디스패처로 옮긴다.
+    // body가 바뀌면 produceState가 이전 코루틴을 자동 취소해 큰 응답을 휙휙 넘길 때 작업이 쌓이지 않는다.
+    val bodyState by produceState<BodyState>(BodyState.Loading, body, headers, showFull) {
+        value = BodyState.Loading
+        val d = withContext(Dispatchers.Default) {
+            decodeBody(body, headers, showFull = showFull)
+        }
+        val js = if (d?.isJson == true) {
+            withContext(Dispatchers.Default) {
+                buildJsonViewerState(d.parsedJson, d.text, defaultExpandedDepth = 2)
+            }
+        } else null
+        value = BodyState.Ready(d, js)
+    }
+    val isLoading = bodyState is BodyState.Loading
+    val decoded = (bodyState as? BodyState.Ready)?.decoded
+    val jsonState = (bodyState as? BodyState.Ready)?.jsonState
+
+    val totalMatches = if (decoded?.isJson == true && jsonState != null && search.isNotBlank()) {
+        jsonState.totalMatches
+    } else 0
     var currentMatchIndex by remember(body, search) { mutableIntStateOf(0) }
     LaunchedEffect(totalMatches) {
         if (totalMatches == 0) currentMatchIndex = 0
@@ -171,6 +190,7 @@ fun RequestDetail(row: NetworkRow) {
                 else -> BodyBlock(
                     title = if (tab == 0) "Request Body" else "Response Body",
                     decoded = decoded,
+                    isLoading = isLoading,
                     search = search,
                     showFull = showFull,
                     onLoadFull = { showFull = true },
@@ -230,20 +250,21 @@ private fun HeaderBlock(
 private fun BodyBlock(
     title: String,
     decoded: DecodedBody?,
+    isLoading: Boolean,
     search: String,
     showFull: Boolean,
     onLoadFull: () -> Unit,
     clipboard: ClipboardManager,
     currentMatchIndex: Int,
     totalMatches: Int,
-    jsonState: JsonViewerState,
+    jsonState: JsonViewerState?,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
         Row {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.weight(1f))
-            if (decoded?.isJson == true) {
+            if (decoded?.isJson == true && jsonState != null) {
                 TextButton(onClick = { jsonState.expandAll() }) { Text("Expand all") }
                 TextButton(onClick = { jsonState.collapseAll() }) { Text("Collapse all") }
             }
@@ -254,6 +275,14 @@ private fun BodyBlock(
             }
         }
         Spacer(Modifier.height(4.dp))
+        if (isLoading) {
+            Text(
+                "Decoding…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@Column
+        }
         if (decoded == null) {
             Text("(empty)", style = MaterialTheme.typography.bodySmall)
             return@Column
@@ -275,7 +304,7 @@ private fun BodyBlock(
             }
         }
         Spacer(Modifier.height(4.dp))
-        if (decoded.isJson) {
+        if (decoded.isJson && jsonState != null) {
             SelectionContainer(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 JsonViewer(
                     state = jsonState,
@@ -294,6 +323,11 @@ private fun BodyBlock(
             }
         }
     }
+}
+
+private sealed interface BodyState {
+    data object Loading : BodyState
+    data class Ready(val decoded: DecodedBody?, val jsonState: JsonViewerState?) : BodyState
 }
 
 @Composable

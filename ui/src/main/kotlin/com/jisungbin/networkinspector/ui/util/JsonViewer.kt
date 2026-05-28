@@ -14,13 +14,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -32,7 +33,14 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.withStyle
 import java.util.IdentityHashMap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -57,7 +65,7 @@ private val BracketColor = Color(0xFF455A64)
 private val HighlightBg = Color(0xFFFFEB3B)
 private val CurrentMatchBg = Color(0xFFFF6F00)
 
-private enum class LineKind {
+internal enum class LineKind {
     ObjectOpenExpanded,
     ObjectClose,
     ObjectCollapsed,
@@ -69,7 +77,7 @@ private enum class LineKind {
     Primitive,
 }
 
-private data class JsonLine(
+internal data class JsonLine(
     val kind: LineKind,
     val indent: Int,
     val nodeId: Int,
@@ -89,6 +97,8 @@ class JsonViewerState internal constructor(
     internal val nodeIds: Map<JsonElement, Int>,
     internal val toggleableIds: Set<Int>,
     internal val defaultExpandedDepth: Int,
+    // 기본 펼침 깊이까지만 펼친 첫 화면용 라인 리스트. 빌더가 백그라운드에서 미리 만든다.
+    internal val initialSkeleton: List<JsonLine>,
 ) {
     internal val expandedOverrides: SnapshotStateMap<Int, Boolean> = mutableStateMapOf()
 
@@ -104,35 +114,59 @@ class JsonViewerState internal constructor(
     }
 }
 
-@Composable
-fun rememberJsonViewerState(json: String, defaultExpandedDepth: Int = 2): JsonViewerState {
-    return remember(json, defaultExpandedDepth) {
-        val parsed = runCatching { Json.parseToJsonElement(json) }.getOrNull()
-        val nodeIds = IdentityHashMap<JsonElement, Int>()
-        val toggleableIds = LinkedHashSet<Int>()
-        if (parsed != null) {
-            var next = 0
-            fun assign(e: JsonElement) {
-                when (e) {
-                    is JsonObject -> {
-                        val id = next++
-                        nodeIds[e] = id
-                        if (e.isNotEmpty()) toggleableIds.add(id)
-                        e.forEach { (_, v) -> assign(v) }
-                    }
-                    is JsonArray -> {
-                        val id = next++
-                        nodeIds[e] = id
-                        if (e.isNotEmpty()) toggleableIds.add(id)
-                        e.forEach { assign(it) }
-                    }
-                    else -> Unit
+/**
+ * 평범한(=비-Composable) 빌더. 호출자가 이미 파싱해둔 [parsed]를 그대로 사용하며,
+ * 트리를 한 번 순회해 노드 ID를 매기고 첫 화면용 [JsonViewerState.initialSkeleton]까지
+ * 같이 만들어둔다. 큰 JSON에서 무겁기 때문에 [Dispatchers.Default]에서 호출하는 걸 권장.
+ */
+fun buildJsonViewerState(
+    parsed: JsonElement?,
+    rawJson: String,
+    defaultExpandedDepth: Int = 2,
+): JsonViewerState {
+    val nodeIds = IdentityHashMap<JsonElement, Int>()
+    val toggleableIds = LinkedHashSet<Int>()
+    if (parsed != null) {
+        var next = 0
+        fun assign(e: JsonElement) {
+            when (e) {
+                is JsonObject -> {
+                    val id = next++
+                    nodeIds[e] = id
+                    if (e.isNotEmpty()) toggleableIds.add(id)
+                    e.forEach { (_, v) -> assign(v) }
                 }
+                is JsonArray -> {
+                    val id = next++
+                    nodeIds[e] = id
+                    if (e.isNotEmpty()) toggleableIds.add(id)
+                    e.forEach { assign(it) }
+                }
+                else -> Unit
             }
-            assign(parsed)
         }
-        JsonViewerState(json, parsed, nodeIds, toggleableIds, defaultExpandedDepth)
+        assign(parsed)
     }
+    val initialSkeleton = if (parsed != null) {
+        flattenJson(parsed, emptyMap(), defaultExpandedDepth, nodeIds)
+    } else emptyList()
+    return JsonViewerState(
+        json = rawJson,
+        parsed = parsed,
+        nodeIds = nodeIds,
+        toggleableIds = toggleableIds,
+        defaultExpandedDepth = defaultExpandedDepth,
+        initialSkeleton = initialSkeleton,
+    )
+}
+
+@Composable
+fun rememberJsonViewerState(
+    parsed: JsonElement?,
+    rawJson: String,
+    defaultExpandedDepth: Int = 2,
+): JsonViewerState = remember(parsed, rawJson, defaultExpandedDepth) {
+    buildJsonViewerState(parsed, rawJson, defaultExpandedDepth)
 }
 
 @Composable
@@ -153,12 +187,43 @@ fun JsonViewer(
         return
     }
 
-    val skeleton by remember(state) {
-        derivedStateOf {
-            flattenJson(parsed, state.expandedOverrides, state.defaultExpandedDepth, state.nodeIds)
-        }
+    // 초기엔 빌더가 미리 만들어둔 펼침 깊이 기반 skeleton을 그대로 사용한다.
+    // 사용자가 expand/collapse를 누르면 그때부터 백그라운드에서 다시 평탄화한다.
+    // collectLatest가 진행 중인 flatten을 취소하고, flattenJson 내부 cancellationCheck가
+    // 256 step마다 ensureActive를 호출해 큰 트리도 협조적으로 끊긴다.
+    var skeleton by remember(state) { mutableStateOf(state.initialSkeleton) }
+    LaunchedEffect(state, parsed) {
+        snapshotFlow { state.expandedOverrides.toMap() }
+            .distinctUntilChanged()
+            .collectLatest { overrides ->
+                if (overrides.isEmpty()) {
+                    skeleton = state.initialSkeleton
+                    return@collectLatest
+                }
+                val result = withContext(Dispatchers.Default) {
+                    val ctx = currentCoroutineContext()
+                    flattenJson(
+                        root = parsed,
+                        expandedOverrides = overrides,
+                        defaultExpandedDepth = state.defaultExpandedDepth,
+                        nodeIds = state.nodeIds,
+                        cancellationCheck = { ctx.ensureActive() },
+                    )
+                }
+                skeleton = result
+            }
     }
-    val lines = remember(skeleton, search) { annotateMatches(skeleton, search) }
+    // search가 바뀌면 이전 LaunchedEffect는 자동 취소되고, delay(120)이 디바운스 역할을 한다.
+    // 큰 JSON에서 매 키스트로크마다 전체 라인을 훑던 동기 계산을 Default 디스패처로 옮긴다.
+    var lines by remember(skeleton) { mutableStateOf(skeleton) }
+    LaunchedEffect(skeleton, search) {
+        if (search.isBlank()) {
+            lines = skeleton
+            return@LaunchedEffect
+        }
+        delay(120)
+        lines = withContext(Dispatchers.Default) { annotateMatches(skeleton, search) }
+    }
     val totalLineMatches = remember(lines) {
         lines.lastOrNull()?.let { it.matchOffset + it.matchCount } ?: 0
     }
@@ -204,13 +269,25 @@ private fun lineKey(line: JsonLine): Any = when (line.kind) {
     LineKind.Primitive -> "P:${line.parentId}:${line.indexInParent}"
 }
 
-private fun flattenJson(
+// internal: 같은 모듈의 벤치마크 소스셋에서도 호출할 수 있어야 함.
+// cancellationCheck: 큰 트리에서 일정 간격마다 호출되어 협조적 취소 지점을 제공한다.
+// 동기 호출자는 기본 noop으로 두면 되고, 코루틴 호출자는 { ctx.ensureActive() }를 넘긴다.
+internal fun flattenJson(
     root: JsonElement,
     expandedOverrides: Map<Int, Boolean>,
     defaultExpandedDepth: Int,
     nodeIds: Map<JsonElement, Int>,
+    cancellationCheck: () -> Unit = {},
 ): List<JsonLine> {
     val out = ArrayList<JsonLine>()
+    var stepsUntilCheck = 256
+
+    fun checkActive() {
+        if (--stepsUntilCheck <= 0) {
+            cancellationCheck()
+            stepsUntilCheck = 256
+        }
+    }
 
     fun walk(
         element: JsonElement,
@@ -220,6 +297,7 @@ private fun flattenJson(
         parentId: Int,
         indexInParent: Int,
     ) {
+        checkActive()
         when (element) {
             is JsonObject -> {
                 val id = nodeIds[element] ?: -1
@@ -288,15 +366,19 @@ private fun line(
     matchCount = 0,
 )
 
-private fun annotateMatches(skeleton: List<JsonLine>, search: String): List<JsonLine> {
+// suspend로 만들어 호출자가 [Dispatchers.Default]에서 안전하게 실행하고,
+// 큰 JSON에서도 협조적 취소가 가능하다(256줄마다 ensureActive).
+private suspend fun annotateMatches(skeleton: List<JsonLine>, search: String): List<JsonLine> {
     if (search.isBlank()) return skeleton
+    val out = ArrayList<JsonLine>(skeleton.size)
     var offset = 0
-    return skeleton.map { l ->
+    skeleton.forEachIndexed { index, l ->
+        if (index and 0xFF == 0) currentCoroutineContext().ensureActive()
         val count = countLineMatches(l, search)
-        val annotated = l.copy(matchOffset = offset, matchCount = count)
+        out.add(l.copy(matchOffset = offset, matchCount = count))
         offset += count
-        annotated
     }
+    return out
 }
 
 private fun countLineMatches(line: JsonLine, search: String): Int {
