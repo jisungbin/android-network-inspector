@@ -10,6 +10,7 @@ data class DecodedBody(
     val isBinary: Boolean,
     val isJson: Boolean,
     val originalSize: Int,
+    val parsedJson: JsonElement?,
 )
 
 private val jsonFormatter = Json { prettyPrint = true; isLenient = true }
@@ -43,12 +44,12 @@ fun decodeBody(
 
     val raw = if (isBinary) "[binary ${originalSize} bytes]" else String(sliced, Charsets.UTF_8)
     val maybeJson = !isBinary && (contentType.contains("json") || raw.startsWithJsonShape())
+    var parsedJson: JsonElement? = null
     val text = if (maybeJson) {
         runCatching {
-            jsonFormatter.encodeToString(
-                JsonElement.serializer(),
-                jsonFormatter.parseToJsonElement(raw),
-            )
+            val element = jsonFormatter.parseToJsonElement(raw)
+            parsedJson = element
+            jsonFormatter.encodeToString(JsonElement.serializer(), element)
         }.getOrDefault(raw)
     } else raw
 
@@ -56,8 +57,9 @@ fun decodeBody(
         text = text,
         encoding = contentEncoding ?: "identity",
         isBinary = isBinary,
-        isJson = maybeJson,
+        isJson = parsedJson != null,
         originalSize = originalSize,
+        parsedJson = parsedJson,
     )
 }
 
