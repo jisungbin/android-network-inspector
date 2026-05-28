@@ -15,7 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,7 +42,7 @@ fun DeviceTabBar(state: UiState, store: AppStore) {
     val sessions = state.inspectingSessions
     if (sessions.isEmpty()) return
     val selectedIndex = sessions.indexOfFirst { it.serial == state.selectedSerial }.coerceAtLeast(0)
-    ScrollableTabRow(
+    PrimaryScrollableTabRow(
         selectedTabIndex = selectedIndex,
         edgePadding = 0.dp,
     ) {

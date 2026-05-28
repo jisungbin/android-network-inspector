@@ -12,7 +12,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,7 +59,7 @@ fun InterceptRulesPanel(state: UiState, store: AppStore) {
             },
             onCancel = { editing = null },
         )
-        Divider(modifier = Modifier.padding(vertical = 8.dp))
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(state.interceptRules, key = { it.id }) { rule ->
                 RuleRow(
@@ -185,7 +186,7 @@ private fun MethodDropdown(current: String, onSelect: (String) -> Unit) {
             onValueChange = {},
             label = { Text("Method") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.menuAnchor(),
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             Methods.forEach { m ->

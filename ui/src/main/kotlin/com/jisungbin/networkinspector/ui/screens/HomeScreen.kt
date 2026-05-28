@@ -14,7 +14,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -92,7 +93,7 @@ fun HomeScreen(state: UiState, store: AppStore) {
                     is AttachState.Connecting -> "Connecting…"
                     is AttachState.Streaming -> "Attached"
                     else -> when (composing?.attachMode) {
-                        AttachMode.AttachRunning -> "Attach to PID ${composing?.runningPid}"
+                        AttachMode.AttachRunning -> "Attach to PID ${composing.runningPid}"
                         else -> "Cold start + attach"
                     }
                 }
@@ -127,7 +128,7 @@ fun HomeScreen(state: UiState, store: AppStore) {
 private fun AttachedDevicesList(state: UiState, store: AppStore) {
     val sessions = state.inspectingSessions
     if (sessions.isEmpty()) return
-    Divider(modifier = Modifier.padding(vertical = 4.dp))
+    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
     Text("Attached devices", style = MaterialTheme.typography.titleSmall)
     sessions.forEach { s ->
         Row(
@@ -170,7 +171,7 @@ private fun DeviceDropdown(state: UiState, store: AppStore, modifier: Modifier =
             onValueChange = {},
             label = { Text("Device") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth(),
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             state.devices.forEach { d ->
@@ -214,7 +215,7 @@ private fun PackageDropdown(state: UiState, store: AppStore) {
             label = { Text("Package$runningHint") },
             placeholder = { Text("type to filter installed third-party apps") },
             singleLine = true,
-            modifier = Modifier.menuAnchor().fillMaxWidth(),
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable).fillMaxWidth(),
             trailingIcon = {
                 if (composing?.packagesLoading == true) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)

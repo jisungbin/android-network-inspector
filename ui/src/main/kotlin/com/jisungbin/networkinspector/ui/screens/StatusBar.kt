@@ -36,7 +36,7 @@ fun StatusBar(state: UiState, session: DeviceSession?) {
             if (streaming != null) {
                 val tail = "pid=${streaming.pid} port=${streaming.hostPort}"
                 when {
-                    session?.inspectorReadyAt == null -> "● setup $tail"
+                    session.inspectorReadyAt == null -> "● setup $tail"
                     session.firstEventAt == null -> "● listening (waiting for traffic) $tail"
                     else -> "● capturing $tail"
                 }

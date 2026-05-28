@@ -24,14 +24,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.withStyle
+import java.awt.datatransfer.StringSelection
 import java.util.IdentityHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -465,9 +468,10 @@ private fun JsonLineRow(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun JsonLineContextMenu(element: JsonElement, content: @Composable () -> Unit) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val snackbar = LocalSnackbarHostState.current
     val scope = rememberCoroutineScope()
     val (prettyLabel, compactLabel) = when (element) {
@@ -480,14 +484,14 @@ private fun JsonLineContextMenu(element: JsonElement, content: @Composable () ->
                 ContextMenuItem(prettyLabel) {
                     val text = PrettyJson.encodeToString(JsonElement.serializer(), element)
                     scope.launch {
-                        clipboard.setText(AnnotatedString(text))
+                        clipboard.setClipEntry(ClipEntry(StringSelection(text)))
                         snackbar.showSnackbar("Copied JSON to clipboard")
                     }
                 },
                 ContextMenuItem(compactLabel) {
                     val text = Json.encodeToString(JsonElement.serializer(), element)
                     scope.launch {
-                        clipboard.setText(AnnotatedString(text))
+                        clipboard.setClipEntry(ClipEntry(StringSelection(text)))
                         snackbar.showSnackbar("Copied JSON to clipboard")
                     }
                 },

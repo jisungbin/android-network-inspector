@@ -23,16 +23,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
@@ -53,7 +55,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -75,6 +76,7 @@ import com.jisungbin.networkinspector.ui.StatusFilter
 import com.jisungbin.networkinspector.ui.UiState
 import com.jisungbin.networkinspector.ui.util.applyFilters
 import com.jisungbin.networkinspector.ui.util.hostOf
+import com.jisungbin.networkinspector.ui.util.rememberCopyToClipboard
 import com.jisungbin.networkinspector.ui.util.toCurl
 import kotlinx.coroutines.delay
 
@@ -115,7 +117,7 @@ fun InspectorScreen(session: DeviceSession, state: UiState, store: AppStore) {
 
     Column(modifier = Modifier.fillMaxSize()) {
         FilterBar(state, store)
-        Divider()
+        HorizontalDivider()
         Row(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.width(leftPaneWidth).fillMaxHeight().clipToBounds()) {
                 RequestTable(
@@ -193,7 +195,7 @@ private fun RequestTable(
     onIgnoreHost: (String) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    val clipboard = LocalClipboardManager.current
+    val copy = rememberCopyToClipboard()
     LaunchedEffect(rows.size, state.autoScroll, session.paused) {
         if (state.autoScroll && !session.paused && rows.isNotEmpty()) {
             listState.animateScrollToItem(rows.size - 1)
@@ -208,18 +210,14 @@ private fun RequestTable(
             widths = columnWidths,
             onClick = onClickHeader,
         )
-        Divider()
+        HorizontalDivider()
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             items(rows, key = { it.connectionId }) { row ->
                 ContextMenuArea(
                     items = {
                         listOf(
-                            ContextMenuItem("Copy URL") {
-                                clipboard.setText(AnnotatedString(row.url))
-                            },
-                            ContextMenuItem("Copy as cURL") {
-                                clipboard.setText(AnnotatedString(row.toCurl()))
-                            },
+                            ContextMenuItem("Copy URL") { copy(row.url) },
+                            ContextMenuItem("Copy as cURL") { copy(row.toCurl()) },
                             ContextMenuItem("Filter to host") {
                                 onFilterHost(hostOf(row.url))
                             },
@@ -435,7 +433,7 @@ private fun UrlCell(url: String, mocked: Boolean = false) {
         }
     }
     TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
         tooltip = { PlainTooltip { Text(url, fontFamily = FontFamily.Monospace) } },
         state = rememberTooltipState(),
     ) {
@@ -490,7 +488,7 @@ private fun StatusFilterDropdown(current: StatusFilter, onSelect: (StatusFilter)
             onValueChange = {},
             label = { Text("Status") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.menuAnchor(),
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
         androidx.compose.material3.DropdownMenu(
             expanded = expanded,
@@ -521,7 +519,7 @@ private fun MethodFilterDropdown(current: String?, onSelect: (String?) -> Unit) 
             onValueChange = {},
             label = { Text("Method") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.menuAnchor(),
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
         androidx.compose.material3.DropdownMenu(
             expanded = expanded,

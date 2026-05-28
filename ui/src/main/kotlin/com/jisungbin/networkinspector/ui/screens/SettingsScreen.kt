@@ -26,20 +26,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ClipboardManager
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.jisungbin.networkinspector.log.DiskLogger
 import com.jisungbin.networkinspector.ui.AppStore
 import com.jisungbin.networkinspector.ui.ThemePreference
 import com.jisungbin.networkinspector.ui.UiState
+import com.jisungbin.networkinspector.ui.util.rememberCopyToClipboard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(state: UiState, store: AppStore) {
-    val clipboard = LocalClipboardManager.current
+    val copy = rememberCopyToClipboard()
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -62,7 +60,7 @@ fun SettingsScreen(state: UiState, store: AppStore) {
         }
 
         Section("Log file") {
-            PathRow(DiskLogger.file.absolutePath, clipboard)
+            PathRow(DiskLogger.file.absolutePath, copy)
             Text(
                 "Every adb shell command, attach step, gRPC event and stack trace lands here. " +
                     "Tail it when something is wrong.",
@@ -73,7 +71,7 @@ fun SettingsScreen(state: UiState, store: AppStore) {
 
         Section("Studio bundle") {
             val bundle = System.getProperty("network.inspector.studio.bundle").orEmpty()
-            PathRow(bundle.ifBlank { "(unset)" }, clipboard)
+            PathRow(bundle.ifBlank { "(unset)" }, copy)
             Text(
                 "Device-side agents are loaded from this directory. " +
                     "Sync from a local Android Studio install with: ./gradlew syncStudioBundle",
@@ -156,7 +154,7 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun PathRow(path: String, clipboard: ClipboardManager) {
+private fun PathRow(path: String, onCopy: (String) -> Unit) {
     androidx.compose.foundation.layout.Row(
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
@@ -167,6 +165,6 @@ private fun PathRow(path: String, clipboard: ClipboardManager) {
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.weight(1f),
         )
-        TextButton(onClick = { clipboard.setText(AnnotatedString(path)) }) { Text("Copy") }
+        TextButton(onClick = { onCopy(path) }) { Text("Copy") }
     }
 }

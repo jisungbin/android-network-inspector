@@ -21,9 +21,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,8 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.ClipboardManager
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -51,6 +49,7 @@ import com.jisungbin.networkinspector.ui.util.JsonViewer
 import com.jisungbin.networkinspector.ui.util.JsonViewerState
 import com.jisungbin.networkinspector.ui.util.buildJsonViewerState
 import com.jisungbin.networkinspector.ui.util.decodeBody
+import com.jisungbin.networkinspector.ui.util.rememberCopyToClipboard
 import com.jisungbin.networkinspector.ui.util.toCurl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -62,7 +61,7 @@ fun RequestDetail(row: NetworkRow) {
     var subTab by remember(row.connectionId) { mutableStateOf(1) }
     var search by remember(row.connectionId) { mutableStateOf("") }
     var showFull by remember(row.connectionId) { mutableStateOf(false) }
-    val clipboard = LocalClipboardManager.current
+    val copy = rememberCopyToClipboard()
 
     val headers = if (tab == 0) row.requestHeaders else row.responseHeaders
     val body = if (tab == 0) row.requestBody else row.responseBody
@@ -107,15 +106,11 @@ fun RequestDetail(row: NetworkRow) {
             )
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TextButton(onClick = {
-                    clipboard.setText(AnnotatedString(row.toCurl()))
-                }) { Text("Copy as cURL") }
-                TextButton(onClick = {
-                    clipboard.setText(AnnotatedString(row.url))
-                }) { Text("Copy URL") }
+                TextButton(onClick = { copy(row.toCurl()) }) { Text("Copy as cURL") }
+                TextButton(onClick = { copy(row.url) }) { Text("Copy URL") }
             }
         }
-        TabRow(selectedTabIndex = tab) {
+        PrimaryTabRow(selectedTabIndex = tab) {
             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Request") })
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Response") })
         }
@@ -184,7 +179,7 @@ fun RequestDetail(row: NetworkRow) {
                     title = if (tab == 0) "Request Headers" else "Response Headers",
                     headers = headers,
                     search = search,
-                    clipboard = clipboard,
+                    onCopy = copy,
                     modifier = Modifier.fillMaxSize(),
                 )
                 else -> BodyBlock(
@@ -194,7 +189,7 @@ fun RequestDetail(row: NetworkRow) {
                     search = search,
                     showFull = showFull,
                     onLoadFull = { showFull = true },
-                    clipboard = clipboard,
+                    onCopy = copy,
                     currentMatchIndex = currentMatchIndex,
                     totalMatches = totalMatches,
                     jsonState = jsonState,
@@ -210,7 +205,7 @@ private fun HeaderBlock(
     title: String,
     headers: List<Pair<String, List<String>>>,
     search: String,
-    clipboard: ClipboardManager,
+    onCopy: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -219,7 +214,7 @@ private fun HeaderBlock(
             Spacer(Modifier.weight(1f))
             TextButton(onClick = {
                 val all = headers.joinToString("\n") { (k, vs) -> "$k: ${vs.joinToString(", ")}" }
-                clipboard.setText(AnnotatedString(all))
+                onCopy(all)
             }) { Text("Copy all") }
         }
         Spacer(Modifier.height(4.dp))
@@ -254,7 +249,7 @@ private fun BodyBlock(
     search: String,
     showFull: Boolean,
     onLoadFull: () -> Unit,
-    clipboard: ClipboardManager,
+    onCopy: (String) -> Unit,
     currentMatchIndex: Int,
     totalMatches: Int,
     jsonState: JsonViewerState?,
@@ -269,9 +264,7 @@ private fun BodyBlock(
                 TextButton(onClick = { jsonState.collapseAll() }) { Text("Collapse all") }
             }
             if (decoded != null && !decoded.isBinary) {
-                TextButton(onClick = {
-                    clipboard.setText(AnnotatedString(decoded.text))
-                }) { Text("Copy") }
+                TextButton(onClick = { onCopy(decoded.text) }) { Text("Copy") }
             }
         }
         Spacer(Modifier.height(4.dp))
