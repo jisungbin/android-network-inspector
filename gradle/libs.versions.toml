@@ -7,7 +7,7 @@ slf4j = "2.0.16"
 logback = "1.5.12"
 compose = "1.7.3"
 kotlinx-serialization-json = "1.7.3"
-kotlinx-benchmark = "0.4.13"
+kotlinx-benchmark = "0.4.17"
 
 [libraries]
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
