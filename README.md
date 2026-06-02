@@ -123,7 +123,7 @@ The **Settings** screen shows live server status, the endpoint (with a copy butt
 | Session | `list_devices`, `list_packages`, `attach`, `detach`, `get_status` |
 | Export | `export_har`, `to_curl` |
 
-Most tools take an optional `serial` that defaults to the active inspector tab or the only attached device. Bodies are gzip/JSON-decoded and truncated for text, base64-encoded for binary. `tail_requests` returns a `cursorMs` you feed back to poll only what changed — useful for watching live traffic.
+Most tools take an optional `serial` that defaults to the active inspector tab or the only attached device. The read/export tools (`list_requests`, `search_requests`, `tail_requests`, `summarize_traffic`, `export_har`) exclude Settings-ignored hosts by default, matching the inspector view; pass `includeIgnoredHosts: true` to include them. Bodies are gzip/JSON-decoded and truncated for text, base64-encoded for binary. `tail_requests` returns a `cursorMs` you feed back to poll only what changed — useful for watching live traffic.
 
 > **Security:** the server binds to `127.0.0.1` only and has **no authentication**. Anyone who can run code on your machine can read captured traffic and inject mock rules through it. Keep it on loopback — don't port-forward or expose it.
 

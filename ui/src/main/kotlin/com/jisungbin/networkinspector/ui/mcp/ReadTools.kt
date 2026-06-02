@@ -23,6 +23,7 @@ internal fun registerReadTools(server: Server, ctx: McpToolContext) {
         inputSchema = toolSchema(
             props = arrayOf(
                 serialProp,
+                includeIgnoredHostsProp,
                 "method" to strProp("Filter by HTTP method, e.g. GET, POST."),
                 "status" to enumProp(
                     "Filter by status class.",
@@ -37,7 +38,7 @@ internal fun registerReadTools(server: Server, ctx: McpToolContext) {
     ) { request ->
         val a = request.args
         val serial = ctx.requireSerial(a.string("serial"))
-        val all = ctx.rows(serial)
+        val all = ctx.visibleRows(serial, a.bool("includeIgnoredHosts") ?: false)
         val filtered = all
             .filter { a.string("method")?.let { m -> it.method.equals(m, true) } ?: true }
             .filter { a.string("urlContains")?.let { u -> it.url.contains(u, true) } ?: true }
@@ -87,6 +88,7 @@ internal fun registerReadTools(server: Server, ctx: McpToolContext) {
             required = listOf("query"),
             props = arrayOf(
                 serialProp,
+                includeIgnoredHostsProp,
                 "query" to strProp("Substring to search for (case-insensitive)."),
                 "in" to enumProp("Where to search. Default all.", listOf("url", "headers", "body", "all")),
                 "limit" to intProp("Max matches to return. Default 50."),
@@ -98,7 +100,7 @@ internal fun registerReadTools(server: Server, ctx: McpToolContext) {
         val query = a.requireString("query")
         val scope = a.string("in") ?: "all"
         val limit = (a.int("limit") ?: 50).coerceIn(1, 1000)
-        val matches = ctx.rows(serial).mapNotNull { row ->
+        val matches = ctx.visibleRows(serial, a.bool("includeIgnoredHosts") ?: false).mapNotNull { row ->
             val where = mutableListOf<String>()
             if (scope == "url" || scope == "all") {
                 if (row.url.contains(query, true)) where += "url"
@@ -136,6 +138,7 @@ internal fun registerReadTools(server: Server, ctx: McpToolContext) {
         inputSchema = toolSchema(
             props = arrayOf(
                 serialProp,
+                includeIgnoredHostsProp,
                 "cursorMs" to intProp("Return requests whose lastUpdatedAtMs is greater than this. Default 0."),
                 "limit" to intProp("Max requests to return. Default 100."),
             ),
@@ -145,7 +148,7 @@ internal fun registerReadTools(server: Server, ctx: McpToolContext) {
         val serial = ctx.requireSerial(a.string("serial"))
         val cursor = a.long("cursorMs") ?: 0L
         val limit = (a.int("limit") ?: 100).coerceIn(1, 1000)
-        val updated = ctx.rows(serial)
+        val updated = ctx.visibleRows(serial, a.bool("includeIgnoredHosts") ?: false)
             .filter { it.lastUpdatedAtMs > cursor }
             .sortedBy { it.lastUpdatedAtMs }
             .take(limit)
@@ -163,11 +166,11 @@ internal fun registerReadTools(server: Server, ctx: McpToolContext) {
         name = "summarize_traffic",
         description = "Aggregate stats for a device's captured traffic: counts by status class and method, " +
             "and per-host call count, failure count and latency. Start here to spot what is slow or breaking.",
-        inputSchema = toolSchema(props = arrayOf(serialProp)),
+        inputSchema = toolSchema(props = arrayOf(serialProp, includeIgnoredHostsProp)),
     ) { request ->
         val a = request.args
         val serial = ctx.requireSerial(a.string("serial"))
-        val rows = ctx.rows(serial)
+        val rows = ctx.visibleRows(serial, a.bool("includeIgnoredHosts") ?: false)
         ctx.ok(buildJsonObject {
             put("serial", serial)
             put("total", rows.size)

@@ -42,3 +42,9 @@ internal fun toolSchema(
 /** The single optional argument shared by almost every tool. */
 internal val serialProp: Pair<String, JsonObject>
     get() = "serial" to strProp("Target device serial. Optional; defaults to the active inspector tab or the only attached device.")
+
+/** Opt-in to surface traffic from Settings-ignored hosts; shared by the read/export tools. */
+internal val includeIgnoredHostsProp: Pair<String, JsonObject>
+    get() = "includeIgnoredHosts" to boolProp(
+        "Include requests from Settings-ignored hosts. Default false — they are hidden, matching the inspector view.",
+    )

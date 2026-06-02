@@ -7,6 +7,7 @@ import com.jisungbin.networkinspector.ui.AttachState
 import com.jisungbin.networkinspector.ui.DeviceSession
 import com.jisungbin.networkinspector.ui.util.DecodedBody
 import com.jisungbin.networkinspector.ui.util.decodeBody
+import com.jisungbin.networkinspector.ui.util.excludeIgnoredHosts
 import com.jisungbin.networkinspector.ui.util.hostOf
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
@@ -130,6 +131,15 @@ internal class McpToolContext(val store: AppStore, val log: McpLog) {
         store.state.value.sessions[serial] ?: throw ToolError("no session for device '$serial'.")
 
     fun rows(serial: String): List<NetworkRow> = session(serial).rows
+
+    /**
+     * Captured rows as the read tools should see them: the Settings "ignored hosts" are excluded
+     * by default — matching what the inspector window shows — unless [includeIgnoredHosts] is true.
+     */
+    fun visibleRows(serial: String, includeIgnoredHosts: Boolean): List<NetworkRow> {
+        val all = rows(serial)
+        return if (includeIgnoredHosts) all else all.excludeIgnoredHosts(store.state.value.ignoredHosts)
+    }
 
     fun row(serial: String, connectionId: Long): NetworkRow =
         rows(serial).firstOrNull { it.connectionId == connectionId }

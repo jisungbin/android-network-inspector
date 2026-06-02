@@ -15,6 +15,7 @@ internal fun registerExportTools(server: Server, ctx: McpToolContext) {
         inputSchema = toolSchema(
             props = arrayOf(
                 serialProp,
+                includeIgnoredHostsProp,
                 "urlContains" to strProp("Only include requests whose URL contains this substring."),
                 "limit" to intProp("Max entries (most recent kept). Default: all."),
             ),
@@ -22,7 +23,7 @@ internal fun registerExportTools(server: Server, ctx: McpToolContext) {
     ) { request ->
         val a = request.args
         val serial = ctx.requireSerial(a.string("serial"))
-        var rows = ctx.rows(serial)
+        var rows = ctx.visibleRows(serial, a.bool("includeIgnoredHosts") ?: false)
         a.string("urlContains")?.let { needle -> rows = rows.filter { it.url.contains(needle, true) } }
         a.int("limit")?.let { n -> rows = rows.sortedByDescending { it.startTimestamp }.take(n.coerceAtLeast(1)) }
         // Return the HAR JSON verbatim (already a JSON document).

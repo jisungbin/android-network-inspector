@@ -10,15 +10,7 @@ fun List<NetworkRow>.applyFilters(
     methodFilter: String?,
     ignoredHosts: List<String> = emptyList(),
 ): List<NetworkRow> {
-    val normalizedIgnored = ignoredHosts
-        .map { it.trim().lowercase() }
-        .filter { it.isNotEmpty() }
-    return asSequence()
-        .filter { row ->
-            if (normalizedIgnored.isEmpty()) return@filter true
-            val host = hostOf(row.url).lowercase()
-            normalizedIgnored.none { ignored -> hostMatches(host, ignored) }
-        }
+    return excludeIgnoredHosts(ignoredHosts).asSequence()
         .filter { row ->
             if (search.isBlank()) return@filter true
             row.url.contains(search, ignoreCase = true) || row.method.contains(search, ignoreCase = true)
@@ -37,6 +29,16 @@ fun List<NetworkRow>.applyFilters(
             methodFilter == null || row.method.equals(methodFilter, ignoreCase = true)
         }
         .toList()
+}
+
+/** Drops requests whose host (or a subdomain of one) matches an entry in [ignoredHosts]. */
+fun List<NetworkRow>.excludeIgnoredHosts(ignoredHosts: List<String>): List<NetworkRow> {
+    val normalized = ignoredHosts.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+    if (normalized.isEmpty()) return this
+    return filter { row ->
+        val host = hostOf(row.url).lowercase()
+        normalized.none { ignored -> hostMatches(host, ignored) }
+    }
 }
 
 fun hostOf(url: String): String =
