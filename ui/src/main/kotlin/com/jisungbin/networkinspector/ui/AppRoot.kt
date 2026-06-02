@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import com.jisungbin.networkinspector.ui.mcp.InspectorMcpServer
 import com.jisungbin.networkinspector.ui.screens.DeviceSessionStatus
 import com.jisungbin.networkinspector.ui.screens.DeviceTabBar
 import com.jisungbin.networkinspector.ui.screens.HomeScreen
@@ -28,7 +29,7 @@ import com.jisungbin.networkinspector.ui.screens.SettingsScreen
 import com.jisungbin.networkinspector.ui.screens.StatusBar
 
 @Composable
-fun AppRoot(store: AppStore) {
+fun AppRoot(store: AppStore, mcp: InspectorMcpServer) {
     val state by store.state.collectAsState()
     val streaming = state.anyStreaming
 
@@ -78,7 +79,7 @@ fun AppRoot(store: AppStore) {
                             }
                         }
                     Destination.RULES -> InterceptRulesScreen(state = state, store = store, streaming = streaming)
-                    Destination.SETTINGS -> SettingsScreen(state = state, store = store)
+                    Destination.SETTINGS -> SettingsScreen(state = state, store = store, mcp = mcp)
                 }
             }
             StatusBar(state = state, session = state.selectedSession)

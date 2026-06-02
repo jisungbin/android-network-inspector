@@ -11,6 +11,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -24,6 +25,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.jisungbin.networkinspector.log.DiskLogger
+import com.jisungbin.networkinspector.ui.mcp.InspectorMcpServer
 import com.jisungbin.networkinspector.ui.util.LocalSnackbarHostState
 import java.awt.FileDialog
 import java.awt.Frame
@@ -40,6 +42,10 @@ fun main() = application {
         state = windowState,
     ) {
         val store = remember { AppStore() }
+        // The MCP server runs in-process and shares this exact AppStore, so agent actions and the
+        // UI observe one another's changes live. Stopped when the window closes.
+        val mcp = remember { InspectorMcpServer(store).also { it.start() } }
+        DisposableEffect(Unit) { onDispose { mcp.stop() } }
         val ui by store.state.collectAsState()
         val streaming = ui.anyStreaming
 
@@ -173,7 +179,7 @@ fun main() = application {
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                 ) { padding ->
                     Surface(modifier = Modifier.fillMaxSize().padding(padding)) {
-                        AppRoot(store = store)
+                        AppRoot(store = store, mcp = mcp)
                     }
                 }
             }

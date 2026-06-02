@@ -132,6 +132,15 @@ class AppStore {
     fun updateMode(serial: String, mode: AttachMode) =
         updateSession(serial) { it.copy(attachMode = mode) }
 
+    /**
+     * Loads the third-party package list for [serial] on demand, off the UI/composing flow.
+     * Used by the embedded MCP server so an agent can enumerate packages for any connected
+     * device without first selecting it on the DEVICES screen.
+     */
+    fun loadPackages(serial: String) {
+        scope.launch(Dispatchers.IO) { loadPackagesFor(serial) }
+    }
+
     private fun loadPackagesFor(serial: String) {
         updateSession(serial) { it.copy(packagesLoading = true) }
         val device = bridge?.devices?.toList()?.firstOrNull { it.serialNumber == serial }
