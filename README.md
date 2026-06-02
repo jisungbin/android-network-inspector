@@ -6,7 +6,7 @@ Decrypted (plaintext) traffic, response/request bodies, headers, and gRPC frames
 
 ## Status
 
-Proof-of-concept. End-to-end attach works against debuggable apps on emulator and physical devices. UI shows the live request table, headers/body detail, intercept rules. Hardening, polish, and broader device coverage are next.
+Proof-of-concept. End-to-end attach works against debuggable apps on emulator and physical devices. UI shows the live request table, headers/body detail, intercept rules. An embedded MCP server exposes the live session to AI agents (see [Control from an AI agent](#control-from-an-ai-agent-mcp)). Hardening, polish, and broader device coverage are next.
 
 ## How it works
 
@@ -102,6 +102,31 @@ If you prefer a DMG installer instead:
 
 The Inspector screen shows the live request table. Selecting a row opens the request/response panel with headers and a body viewer (gzip auto-decoded, text/binary auto-detected). The right panel also hosts Intercept Rules — match a URL pattern and replace status code / body.
 
+## Control from an AI agent (MCP)
+
+The app embeds a [Model Context Protocol](https://modelcontextprotocol.io) server, so an MCP client such as Claude Code can drive the inspector — read captured traffic, search bodies, attach/detach, add mock rules — all against the **same live session the window shows**. A rule an agent adds shows up in the Rules screen instantly; the requests an agent reads are exactly the rows you see, because the server shares the one in-memory `RowAggregator`/state the UI renders from.
+
+It starts automatically with the app and listens on `http://127.0.0.1:38017/mcp` (Ktor streamable HTTP, loopback only). Register it once with Claude Code:
+
+```bash
+claude mcp add --transport http network-inspector http://127.0.0.1:38017/mcp
+```
+
+The **Settings** screen shows live server status, the endpoint (with a copy button), a Start/Stop toggle, and a live **MCP activity log** — every server event and tool call (arguments, result, elapsed time; errors highlighted) is recorded there and mirrored to the disk log.
+
+### Tools
+
+| Group | Tools |
+|---|---|
+| Inspect | `list_requests`, `get_request`, `search_requests`, `tail_requests`, `summarize_traffic` |
+| Mock / intercept | `add_intercept_rule`, `update_intercept_rule`, `set_intercept_rule_enabled`, `remove_intercept_rule`, `list_intercept_rules`, `mock_from_captured` |
+| Session | `list_devices`, `list_packages`, `attach`, `detach`, `get_status` |
+| Export | `export_har`, `to_curl` |
+
+Most tools take an optional `serial` that defaults to the active inspector tab or the only attached device. Bodies are gzip/JSON-decoded and truncated for text, base64-encoded for binary. `tail_requests` returns a `cursorMs` you feed back to poll only what changed — useful for watching live traffic.
+
+> **Security:** the server binds to `127.0.0.1` only and has **no authentication**. Anyone who can run code on your machine can read captured traffic and inject mock rules through it. Keep it on loopback — don't port-forward or expose it.
+
 ## Limitations
 
 - **Debuggable APKs only.** Release builds reject `am attach-agent`.
@@ -132,7 +157,7 @@ If attach fails, scroll to the bottom of the log file — the diagnose block pri
 | `:protocol` | Studio prebuilt jars + gRPC `TransportClient` + `Configs` + Inspector command builders + `RuleSender`. **Only module #2 proto self-build migration will touch.** |
 | `:engine` | orchestration + domain: `AgentDeployer`, `DaemonRunner`, `AgentAttacher`, `AttachOrchestrator`/`AttachSession`, `NetworkRow`, `RowAggregator`, `NetworkEventRenderer` |
 | `:cli` | command-line entry point (`list-devices`, `attach`) |
-| `:ui` | Compose Desktop GUI (Home + Inspector screens, intercept rules) |
+| `:ui` | Compose Desktop GUI (Home + Inspector screens, intercept rules) + embedded MCP server (`ui.mcp`, Ktor streamable HTTP over the shared `AppStore`) |
 
 Dependency direction (solid = `api`, dotted = `implementation`):
 
