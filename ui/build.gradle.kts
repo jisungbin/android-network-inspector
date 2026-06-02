@@ -58,6 +58,8 @@ dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.mcp.kotlin.sdk)
+    implementation(libs.ktor.server.cio)
     runtimeOnly(libs.logback.classic)
 
     benchmarksImplementation(libs.kotlinx.benchmark.runtime)
