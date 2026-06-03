@@ -11,7 +11,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(26)
 }
 
 allOpen {
