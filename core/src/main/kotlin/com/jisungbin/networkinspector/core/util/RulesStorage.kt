@@ -1,6 +1,6 @@
-package com.jisungbin.networkinspector.ui.util
+package com.jisungbin.networkinspector.core.util
 
-import com.jisungbin.networkinspector.ui.InterceptRule
+import com.jisungbin.networkinspector.core.InterceptRule
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File

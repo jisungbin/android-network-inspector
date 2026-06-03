@@ -1,8 +1,8 @@
-package com.jisungbin.networkinspector.ui.mcp
+package com.jisungbin.networkinspector.mcp
 
 import com.jisungbin.networkinspector.engine.AttachMode
-import com.jisungbin.networkinspector.ui.AttachState
-import com.jisungbin.networkinspector.ui.DeviceSession
+import com.jisungbin.networkinspector.core.AttachState
+import com.jisungbin.networkinspector.core.DeviceSession
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first

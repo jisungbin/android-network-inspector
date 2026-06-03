@@ -1,9 +1,9 @@
-package com.jisungbin.networkinspector.ui.mcp
+package com.jisungbin.networkinspector.mcp
 
 import com.jisungbin.networkinspector.engine.ConnectionState
 import com.jisungbin.networkinspector.engine.NetworkRow
-import com.jisungbin.networkinspector.ui.util.decodeBody
-import com.jisungbin.networkinspector.ui.util.hostOf
+import com.jisungbin.networkinspector.core.util.decodeBody
+import com.jisungbin.networkinspector.core.util.hostOf
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray

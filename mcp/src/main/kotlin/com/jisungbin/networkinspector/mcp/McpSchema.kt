@@ -1,4 +1,4 @@
-package com.jisungbin.networkinspector.ui.mcp
+package com.jisungbin.networkinspector.mcp
 
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.JsonObject

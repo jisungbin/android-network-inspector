@@ -18,7 +18,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import com.jisungbin.networkinspector.ui.mcp.InspectorMcpServer
+import com.jisungbin.networkinspector.core.AppStore
+import com.jisungbin.networkinspector.core.AttachState
+import com.jisungbin.networkinspector.core.Destination
+import com.jisungbin.networkinspector.core.anyStreaming
+import com.jisungbin.networkinspector.core.inspectingSessions
+import com.jisungbin.networkinspector.core.selectedSession
+import com.jisungbin.networkinspector.mcp.InspectorMcpServer
 import com.jisungbin.networkinspector.ui.screens.DeviceSessionStatus
 import com.jisungbin.networkinspector.ui.screens.DeviceTabBar
 import com.jisungbin.networkinspector.ui.screens.HomeScreen

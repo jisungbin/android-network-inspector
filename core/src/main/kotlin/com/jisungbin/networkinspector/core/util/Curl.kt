@@ -1,4 +1,4 @@
-package com.jisungbin.networkinspector.ui.util
+package com.jisungbin.networkinspector.core.util
 
 import com.jisungbin.networkinspector.engine.NetworkRow
 

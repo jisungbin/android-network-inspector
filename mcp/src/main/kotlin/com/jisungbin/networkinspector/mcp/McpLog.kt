@@ -1,4 +1,4 @@
-package com.jisungbin.networkinspector.ui.mcp
+package com.jisungbin.networkinspector.mcp
 
 import com.jisungbin.networkinspector.log.DiskLogger
 import kotlinx.coroutines.flow.MutableStateFlow

@@ -13,9 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.jisungbin.networkinspector.engine.ConnectionState
-import com.jisungbin.networkinspector.ui.AttachState
-import com.jisungbin.networkinspector.ui.DeviceSession
-import com.jisungbin.networkinspector.ui.UiState
+import com.jisungbin.networkinspector.core.AttachState
+import com.jisungbin.networkinspector.core.DeviceSession
+import com.jisungbin.networkinspector.core.UiState
 
 @Composable
 fun StatusBar(state: UiState, session: DeviceSession?) {

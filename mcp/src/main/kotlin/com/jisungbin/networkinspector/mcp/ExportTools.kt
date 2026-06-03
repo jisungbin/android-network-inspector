@@ -1,7 +1,7 @@
-package com.jisungbin.networkinspector.ui.mcp
+package com.jisungbin.networkinspector.mcp
 
-import com.jisungbin.networkinspector.ui.util.HarExporter
-import com.jisungbin.networkinspector.ui.util.toCurl
+import com.jisungbin.networkinspector.core.util.HarExporter
+import com.jisungbin.networkinspector.core.util.toCurl
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 /** Export / repro tools: standard HAR archive and a runnable curl command. */

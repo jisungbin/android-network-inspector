@@ -1,4 +1,4 @@
-package com.jisungbin.networkinspector.ui
+package com.jisungbin.networkinspector.core
 
 import com.jisungbin.networkinspector.adb.DeviceSnapshot
 import com.jisungbin.networkinspector.engine.AttachMode
@@ -14,8 +14,8 @@ enum class ThemePreference(val label: String) {
 
 /**
  * Per-device inspection state. One entry per device the user has selected or attached to.
- * Holds only immutable UI state — runtime resources (AttachSession, stream Job, RowAggregator)
- * live in [AppStore.runtimes], keyed by the same serial.
+ * Holds only immutable UI state — runtime resources (the attach session, stream job, row
+ * aggregator, rule channel) live in [SessionController], keyed by the same serial.
  */
 data class DeviceSession(
     val serial: String,

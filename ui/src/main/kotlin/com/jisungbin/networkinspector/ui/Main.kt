@@ -24,8 +24,14 @@ import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.jisungbin.networkinspector.core.AppStore
+import com.jisungbin.networkinspector.core.AttachState
+import com.jisungbin.networkinspector.core.Destination
+import com.jisungbin.networkinspector.core.ThemePreference
+import com.jisungbin.networkinspector.core.anyStreaming
+import com.jisungbin.networkinspector.core.selectedSession
 import com.jisungbin.networkinspector.log.DiskLogger
-import com.jisungbin.networkinspector.ui.mcp.InspectorMcpServer
+import com.jisungbin.networkinspector.mcp.InspectorMcpServer
 import com.jisungbin.networkinspector.ui.util.LocalSnackbarHostState
 import java.awt.FileDialog
 import java.awt.Frame

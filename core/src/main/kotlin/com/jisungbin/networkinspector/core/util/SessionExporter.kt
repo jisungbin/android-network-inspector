@@ -1,8 +1,8 @@
-package com.jisungbin.networkinspector.ui.util
+package com.jisungbin.networkinspector.core.util
 
 import com.jisungbin.networkinspector.engine.NetworkRow
-import com.jisungbin.networkinspector.ui.DeviceSession
-import com.jisungbin.networkinspector.ui.UiState
+import com.jisungbin.networkinspector.core.DeviceSession
+import com.jisungbin.networkinspector.core.UiState
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement

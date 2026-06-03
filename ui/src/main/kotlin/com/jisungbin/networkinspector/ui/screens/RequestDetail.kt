@@ -44,13 +44,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.jisungbin.networkinspector.engine.NetworkRow
-import com.jisungbin.networkinspector.ui.util.DecodedBody
+import com.jisungbin.networkinspector.core.util.DecodedBody
 import com.jisungbin.networkinspector.ui.util.JsonViewer
 import com.jisungbin.networkinspector.ui.util.JsonViewerState
 import com.jisungbin.networkinspector.ui.util.buildJsonViewerState
-import com.jisungbin.networkinspector.ui.util.decodeBody
+import com.jisungbin.networkinspector.core.util.decodeBody
 import com.jisungbin.networkinspector.ui.util.rememberCopyToClipboard
-import com.jisungbin.networkinspector.ui.util.toCurl
+import com.jisungbin.networkinspector.core.util.toCurl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

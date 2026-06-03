@@ -141,6 +141,12 @@ class AttachSession(
         }
         .onEach { DiskLogger.log("net-event: ${it.unionCase} ts=${it.timestamp}") }
 
+    /** Suspends until the stream id is learned from a STREAM event (or [timeoutMs] elapses → 0). */
+    suspend fun awaitStreamId(timeoutMs: Long = 5_000): Long {
+        if (streamId != 0L) return streamId
+        return withTimeoutOrNull(timeoutMs) { streamIdLatch.await() } ?: 0L
+    }
+
     private fun awaitStreamIdBlocking(timeoutMs: Long = 5_000): Long {
         if (streamId != 0L) return streamId
         return runBlocking {

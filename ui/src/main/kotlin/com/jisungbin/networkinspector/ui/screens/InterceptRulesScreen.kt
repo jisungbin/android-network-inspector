@@ -9,8 +9,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jisungbin.networkinspector.ui.AppStore
-import com.jisungbin.networkinspector.ui.UiState
+import com.jisungbin.networkinspector.core.AppStore
+import com.jisungbin.networkinspector.core.UiState
 
 @Composable
 fun InterceptRulesScreen(state: UiState, store: AppStore, streaming: Boolean) {

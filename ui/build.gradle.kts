@@ -50,7 +50,8 @@ benchmark {
 }
 
 dependencies {
-    implementation(project(":engine"))
+    implementation(project(":core"))
+    implementation(project(":mcp"))
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)
@@ -58,8 +59,6 @@ dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.mcp.kotlin.sdk)
-    implementation(libs.ktor.server.cio)
     runtimeOnly(libs.logback.classic)
 
     benchmarksImplementation(libs.kotlinx.benchmark.runtime)

@@ -36,13 +36,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jisungbin.networkinspector.engine.AttachMode
-import com.jisungbin.networkinspector.ui.AppStore
-import com.jisungbin.networkinspector.ui.AttachPhase
-import com.jisungbin.networkinspector.ui.AttachState
-import com.jisungbin.networkinspector.ui.Destination
-import com.jisungbin.networkinspector.ui.UiState
-import com.jisungbin.networkinspector.ui.composingSession
-import com.jisungbin.networkinspector.ui.inspectingSessions
+import com.jisungbin.networkinspector.core.AppStore
+import com.jisungbin.networkinspector.core.AttachPhase
+import com.jisungbin.networkinspector.core.AttachState
+import com.jisungbin.networkinspector.core.Destination
+import com.jisungbin.networkinspector.core.UiState
+import com.jisungbin.networkinspector.core.composingSession
+import com.jisungbin.networkinspector.core.inspectingSessions
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

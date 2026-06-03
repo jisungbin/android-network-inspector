@@ -69,15 +69,15 @@ import androidx.compose.runtime.mutableStateOf
 import java.awt.Cursor
 import com.jisungbin.networkinspector.engine.ConnectionState
 import com.jisungbin.networkinspector.engine.NetworkRow
-import com.jisungbin.networkinspector.ui.AppStore
-import com.jisungbin.networkinspector.ui.DeviceSession
-import com.jisungbin.networkinspector.ui.SortKey
-import com.jisungbin.networkinspector.ui.StatusFilter
-import com.jisungbin.networkinspector.ui.UiState
-import com.jisungbin.networkinspector.ui.util.applyFilters
-import com.jisungbin.networkinspector.ui.util.hostOf
+import com.jisungbin.networkinspector.core.AppStore
+import com.jisungbin.networkinspector.core.DeviceSession
+import com.jisungbin.networkinspector.core.SortKey
+import com.jisungbin.networkinspector.core.StatusFilter
+import com.jisungbin.networkinspector.core.UiState
+import com.jisungbin.networkinspector.core.util.applyFilters
+import com.jisungbin.networkinspector.core.util.hostOf
 import com.jisungbin.networkinspector.ui.util.rememberCopyToClipboard
-import com.jisungbin.networkinspector.ui.util.toCurl
+import com.jisungbin.networkinspector.core.util.toCurl
 import kotlinx.coroutines.delay
 
 private data class Column(val key: SortKey, val label: String, val initialWidth: Dp)

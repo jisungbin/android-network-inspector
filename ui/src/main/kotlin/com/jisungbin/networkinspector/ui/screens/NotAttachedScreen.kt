@@ -11,8 +11,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jisungbin.networkinspector.ui.AppStore
-import com.jisungbin.networkinspector.ui.Destination
+import com.jisungbin.networkinspector.core.AppStore
+import com.jisungbin.networkinspector.core.Destination
 
 @Composable
 fun NotAttachedScreen(store: AppStore) {

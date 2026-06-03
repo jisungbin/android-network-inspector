@@ -24,11 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import com.jisungbin.networkinspector.ui.AppStore
-import com.jisungbin.networkinspector.ui.AttachState
-import com.jisungbin.networkinspector.ui.DeviceSession
-import com.jisungbin.networkinspector.ui.UiState
-import com.jisungbin.networkinspector.ui.inspectingSessions
+import com.jisungbin.networkinspector.core.AppStore
+import com.jisungbin.networkinspector.core.AttachState
+import com.jisungbin.networkinspector.core.DeviceSession
+import com.jisungbin.networkinspector.core.UiState
+import com.jisungbin.networkinspector.core.inspectingSessions
 
 internal fun attachBadge(attach: AttachState): String = when (attach) {
     is AttachState.Streaming -> "●"

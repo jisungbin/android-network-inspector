@@ -31,10 +31,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jisungbin.networkinspector.ui.AppStore
-import com.jisungbin.networkinspector.ui.InterceptRule
-import com.jisungbin.networkinspector.ui.UiState
-import com.jisungbin.networkinspector.ui.selectedSession
+import com.jisungbin.networkinspector.core.AppStore
+import com.jisungbin.networkinspector.core.InterceptRule
+import com.jisungbin.networkinspector.core.UiState
+import com.jisungbin.networkinspector.core.selectedSession
 import java.util.UUID
 
 private val Methods = listOf("ANY", "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS")

@@ -156,8 +156,10 @@ If attach fails, scroll to the bottom of the log file — the diagnose block pri
 | `:adb` | ddmlib wrappers: device + shell + sync + port forward + pid lookup |
 | `:protocol` | Studio prebuilt jars + gRPC `TransportClient` + `Configs` + Inspector command builders + `RuleSender`. **Only module #2 proto self-build migration will touch.** |
 | `:engine` | orchestration + domain: `AgentDeployer`, `DaemonRunner`, `AgentAttacher`, `AttachOrchestrator`/`AttachSession`, `NetworkRow`, `RowAggregator`, `NetworkEventRenderer` |
+| `:core` | app state + controllers (`AppStore` facade over `AppState`, `DeviceController`/`SessionController`/`InterceptRuleController`/`IgnoredHostStore`, `DeviceRuleChannel`), UI-state models, non-Compose util (body decode, filters, HAR/curl export, storage) |
+| `:mcp` | embedded MCP server (`InspectorMcpServer` + tools) over Ktor streamable HTTP, sharing the live `AppStore` from `:core` |
 | `:cli` | command-line entry point (`list-devices`, `attach`) |
-| `:ui` | Compose Desktop GUI (Home + Inspector screens, intercept rules) + embedded MCP server (`ui.mcp`, Ktor streamable HTTP over the shared `AppStore`) |
+| `:ui` | Compose Desktop GUI only (Home + Inspector screens, intercept rules); drives `:core` and embeds `:mcp` |
 
 Dependency direction (solid = `api`, dotted = `implementation`):
 
@@ -165,6 +167,8 @@ Dependency direction (solid = `api`, dotted = `implementation`):
 flowchart TD
     cli[":cli"]
     ui[":ui"]
+    mcp[":mcp"]
+    core[":core"]
     engine[":engine"]
     protocol[":protocol"]
     adb[":adb"]
@@ -173,7 +177,11 @@ flowchart TD
     ddmlib[("ddmlib")]
 
     cli --> engine
-    ui --> engine
+    ui -.-> core
+    ui -.-> mcp
+    mcp --> core
+    mcp -.-> engine
+    core --> engine
     engine --> protocol
     engine --> adb
     engine --> log

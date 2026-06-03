@@ -1,8 +1,8 @@
-package com.jisungbin.networkinspector.ui.util
+package com.jisungbin.networkinspector.core.util
 
 import com.jisungbin.networkinspector.engine.ConnectionState
 import com.jisungbin.networkinspector.engine.NetworkRow
-import com.jisungbin.networkinspector.ui.StatusFilter
+import com.jisungbin.networkinspector.core.StatusFilter
 
 fun List<NetworkRow>.applyFilters(
     search: String,

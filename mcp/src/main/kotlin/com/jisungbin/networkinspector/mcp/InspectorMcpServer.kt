@@ -1,7 +1,7 @@
-package com.jisungbin.networkinspector.ui.mcp
+package com.jisungbin.networkinspector.mcp
 
 import com.jisungbin.networkinspector.log.DiskLogger
-import com.jisungbin.networkinspector.ui.AppStore
+import com.jisungbin.networkinspector.core.AppStore
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
