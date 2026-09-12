@@ -1,5 +1,5 @@
 [versions]
-kotlin = "2.4.0-RC2"
+kotlin = "2.4.20"
 coroutines = "1.11.0"
 ddmlib = "32.3.0-alpha09"
 protobuf = "4.35.0"
